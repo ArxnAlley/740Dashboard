@@ -57,10 +57,10 @@ const BAKERY_CONFIG =
 
     pickupDays: ['Monday', 'Tuesday', 'Friday'],
 
-    // [FUTURE: productionDays will drive website availability, production queue, and order scheduling]
+    // productionDays drives production queue, Calendar capacity display, and Apps Script scheduling
     productionDays: ['Monday', 'Tuesday', 'Friday'],
 
-    // [FUTURE: dailyCapacity will drive website availability and production queue limits]
+    // dailyCapacity is read by getCapacityForDate() and surfaced on the Calendar per-day view
     dailyCapacity:
     {
         Monday:    15,
@@ -162,16 +162,22 @@ const BAKERY_PRODUCTS =
 
 /* ============================================================
    ORDERS
-   Unified array replacing separate request/confirmed/production tables.
-   Status flow: newRequest → pendingPayment → confirmed → inProduction
-                → readyForPickup → completed | cancelled
+   Unified array — single source of truth for all order data.
+
+   Internal status contract (permanent NuloOS workflow):
+   NEW_REQUEST → AWAITING_PAYMENT → CONFIRMED → IN_PRODUCTION → PENDING_PICKUP → COMPLETED
+   NEW_REQUEST or AWAITING_PAYMENT may also transition to CANCELLED.
+   Apps Script moves CONFIRMED orders into IN_PRODUCTION on production days.
+
+   Status values must match this contract in all future integrations:
+   Google Sheets, Apps Script, Supabase, Twilio, and Calendar hooks.
 ============================================================ */
 
 // [SHEETS HOOK: OrderRequests sheet — new requests arrive here]
 // [SUPABASE HOOK: orders table, client_id filtered]
 // [STRIPE HOOK: paymentStatus sync from Stripe webhook]
-// [TWILIO HOOK: SMS trigger on status change to confirmed]
-// [CALENDAR HOOK: Create Google Calendar event on confirm]
+// [TWILIO HOOK: SMS trigger on status change to CONFIRMED]
+// [CALENDAR HOOK: Create Google Calendar event on CONFIRMED]
 const ORDERS =
 [
 
@@ -185,8 +191,8 @@ const ORDERS =
         pickupTime: '12:00 PM',
         products: 'Cheesecake Stuffed Strawberries x2',
         productTotal: 54,
-        status: 'inProduction',
-        paymentStatus: 'unpaid',
+        status: 'CONFIRMED',
+        paymentStatus: 'paid',
         notes: '',
         submittedAt: '2026-06-28T14:15:00'
     },
@@ -201,7 +207,7 @@ const ORDERS =
         pickupTime: '2:00 PM',
         products: 'Large Tray x2',
         productTotal: 80,
-        status: 'readyForPickup',
+        status: 'PENDING_PICKUP',
         paymentStatus: 'paid',
         notes: 'Repeat customer.',
         submittedAt: '2026-06-26T09:00:00'
@@ -217,7 +223,7 @@ const ORDERS =
         pickupTime: '10:00 AM',
         products: 'Large Tray x1',
         productTotal: 40,
-        status: 'confirmed',
+        status: 'CONFIRMED',
         paymentStatus: 'paid',
         notes: 'Bluerazz and watermelon flavors.',
         submittedAt: '2026-06-27T08:30:00'
@@ -233,7 +239,7 @@ const ORDERS =
         pickupTime: '1:00 PM',
         products: 'Small Tray x1',
         productTotal: 25,
-        status: 'confirmed',
+        status: 'CONFIRMED',
         paymentStatus: 'paid',
         notes: '',
         submittedAt: '2026-06-25T10:00:00'
@@ -249,7 +255,7 @@ const ORDERS =
         pickupTime: '11:00 AM',
         products: 'Trio Tray x1, Chocolate Covered Strawberries x1',
         productTotal: 70,
-        status: 'completed',
+        status: 'COMPLETED',
         paymentStatus: 'paid',
         notes: '',
         submittedAt: '2026-06-24T11:00:00'
@@ -265,7 +271,7 @@ const ORDERS =
         pickupTime: '1:00 PM',
         products: 'Small Tray x2',
         productTotal: 50,
-        status: 'completed',
+        status: 'COMPLETED',
         paymentStatus: 'paid',
         notes: '',
         submittedAt: '2026-06-20T14:00:00'
@@ -281,7 +287,7 @@ const ORDERS =
         pickupTime: '12:00 PM',
         products: 'Large Tray x1, Chocolate Covered Strawberries x1',
         productTotal: 65,
-        status: 'completed',
+        status: 'COMPLETED',
         paymentStatus: 'paid',
         notes: '',
         submittedAt: '2026-06-19T09:30:00'
@@ -297,7 +303,7 @@ const ORDERS =
         pickupTime: '',
         products: 'Small Tray x1',
         productTotal: 25,
-        status: 'newRequest',
+        status: 'NEW_REQUEST',
         paymentStatus: 'unpaid',
         notes: '',
         submittedAt: '2026-06-30T11:42:00'
@@ -313,7 +319,7 @@ const ORDERS =
         pickupTime: '',
         products: 'Large Tray x1, Chocolate Covered Strawberries x1',
         productTotal: 65,
-        status: 'newRequest',
+        status: 'NEW_REQUEST',
         paymentStatus: 'unpaid',
         notes: 'First time customer — discovered via TikTok.',
         submittedAt: '2026-06-30T09:51:00'
@@ -329,7 +335,7 @@ const ORDERS =
         pickupTime: '',
         products: 'Small Tray x2, Trio Tray x1',
         productTotal: 95,
-        status: 'pendingPayment',
+        status: 'AWAITING_PAYMENT',
         paymentStatus: 'unpaid',
         notes: 'Called Monday, no answer.',
         submittedAt: '2026-06-27T10:08:00'
@@ -345,7 +351,7 @@ const ORDERS =
         pickupTime: '',
         products: 'Large Tray x1',
         productTotal: 40,
-        status: 'newRequest',
+        status: 'NEW_REQUEST',
         paymentStatus: 'unpaid',
         notes: 'Wants bluerazz and watermelon flavors.',
         submittedAt: '2026-06-27T08:30:00'
@@ -361,7 +367,7 @@ const ORDERS =
         pickupTime: '',
         products: 'Trio Tray x2',
         productTotal: 90,
-        status: 'cancelled',
+        status: 'CANCELLED',
         paymentStatus: 'unpaid',
         notes: 'Customer changed mind.',
         submittedAt: '2026-06-29T16:20:00'
@@ -566,6 +572,118 @@ const REPORTS_DATA =
 
 
 /* ============================================================
+   CALENDAR DATA UTILITIES
+
+   These functions are the data layer for the future Calendar page.
+   The Calendar renderer calls buildCalendarData(startDate, endDate)
+   and receives a pre-grouped map — no scheduling logic needed in the renderer.
+
+   All functions read from BAKERY_CONFIG and ORDERS.
+   pickupDate (YYYY-MM-DD) is the canonical scheduling field on every order.
+   Apps Script uses the same field when moving orders to IN_PRODUCTION.
+============================================================ */
+
+// Returns the weekday name for a YYYY-MM-DD string.
+// Parsed at noon to avoid daylight saving time boundary issues.
+function getDayOfWeek(dateStr)
+{
+
+    const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const d    = new Date(dateStr + 'T12:00:00');
+
+    return days[d.getDay()];
+
+}
+
+// Returns the configured daily capacity for a given date.
+// Reads from BAKERY_CONFIG.dailyCapacity via the date's weekday.
+function getCapacityForDate(dateStr)
+{
+
+    const day = getDayOfWeek(dateStr);
+
+    return BAKERY_CONFIG.dailyCapacity[day] || 0;
+
+}
+
+// Returns true if a given date falls on a configured production day.
+function isProductionDay(dateStr)
+{
+
+    return BAKERY_CONFIG.productionDays.includes(getDayOfWeek(dateStr));
+
+}
+
+// Returns true if a given date falls on a configured pickup day.
+function isPickupDay(dateStr)
+{
+
+    return BAKERY_CONFIG.pickupDays.includes(getDayOfWeek(dateStr));
+
+}
+
+// Builds a calendar-ready data map for a date range.
+// Returns an object keyed by YYYY-MM-DD. Each entry contains:
+//   capacity, isProductionDay, isPickupDay, and orders grouped by status.
+// The Calendar renderer iterates this map directly — no further shaping needed.
+//
+// [CALENDAR HOOK: Replace ORDERS.forEach with Supabase query filtered by date range and client_id]
+function buildCalendarData(startDate, endDate)
+{
+
+    const map    = {};
+    const cursor = new Date(startDate + 'T12:00:00');
+    const end    = new Date(endDate   + 'T12:00:00');
+
+    while (cursor <= end)
+    {
+
+        const dateStr   = cursor.toISOString().slice(0, 10);
+        const dayOfWeek = getDayOfWeek(dateStr);
+
+        map[dateStr] =
+        {
+            date:            dateStr,
+            dayOfWeek:       dayOfWeek,
+            capacity:        BAKERY_CONFIG.dailyCapacity[dayOfWeek] || 0,
+            isProductionDay: BAKERY_CONFIG.productionDays.includes(dayOfWeek),
+            isPickupDay:     BAKERY_CONFIG.pickupDays.includes(dayOfWeek),
+            confirmed:       [],
+            inProduction:    [],
+            pendingPickup:   [],
+            completed:       [],
+            activeCount:     0
+        };
+
+        cursor.setDate(cursor.getDate() + 1);
+
+    }
+
+    ORDERS.forEach(function(order)
+    {
+
+        const day = map[order.pickupDate];
+
+        if (!day) { return; }
+
+        if (order.status === 'CONFIRMED')      { day.confirmed.push(order); }
+        if (order.status === 'IN_PRODUCTION')  { day.inProduction.push(order); }
+        if (order.status === 'PENDING_PICKUP') { day.pendingPickup.push(order); }
+        if (order.status === 'COMPLETED')      { day.completed.push(order); }
+
+        if (order.status !== 'CANCELLED' && order.status !== 'COMPLETED')
+        {
+            day.activeCount++;
+        }
+
+    });
+
+    return map;
+
+}
+
+
+/* ============================================================
    ACTIVITY LOG
 ============================================================ */
 
@@ -574,7 +692,7 @@ const ACTIVITY_LOG =
 [
 
     {
-        type: 'newRequest',
+        type: 'NEW_REQUEST',
         message: 'New order request from Tamara Lewis',
         detail: 'Small Tray x1 — Fri Jul 3',
         time: '11:42 AM',
@@ -582,7 +700,7 @@ const ACTIVITY_LOG =
     },
 
     {
-        type: 'newRequest',
+        type: 'NEW_REQUEST',
         message: 'New order request from Destiny Brown',
         detail: 'Large Tray x1, Choc. Strawberries x1 — Tue Jul 7',
         time: '9:51 AM',
@@ -590,25 +708,25 @@ const ACTIVITY_LOG =
     },
 
     {
-        type: 'readyForPickup',
-        message: 'ORD-2200 marked Ready for pickup',
+        type: 'PENDING_PICKUP',
+        message: 'ORD-2200 ready for pickup',
         detail: 'Keisha Davis — Mon Jun 30 @ 2:00 PM',
         time: '9:30 AM',
         icon: 'fa-circle-check'
     },
 
     {
-        type: 'inProduction',
-        message: 'Production started — ORD-2201',
-        detail: 'Sarah Mitchell — Fri Jul 3',
+        type: 'CONFIRMED',
+        message: 'ORD-2201 confirmed — Sarah Mitchell',
+        detail: 'Cheesecake Stuffed Strawberries x2 — Fri Jul 3',
         time: '8:45 AM',
         icon: 'fa-fire-burner'
     },
 
     {
-        type: 'confirmed',
-        message: 'ORD-NEW-001 confirmed',
-        detail: 'Ashley Williams — Fri Jul 3',
+        type: 'CONFIRMED',
+        message: 'ORD-NEW-001 confirmed — Ashley Williams',
+        detail: 'Large Tray x1 — Fri Jul 3',
         time: 'Yesterday',
         icon: 'fa-circle-check'
     }

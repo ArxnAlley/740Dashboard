@@ -3,77 +3,107 @@
    dashboardJS.js
 
    Single-page application engine for the NuloEdge Bakery Module.
-   Handles navigation, page rendering, and UI interactions.
 
    Architecture:
-   1. Constants & Utilities
+   1. Workflow Constants & Utilities
    2. Navigation System
    3. Page Renderers (one per sidebar item)
-   4. Interactive Event Handlers
-   5. Toast Notification System
-   6. Initialization
+   4. Order Detail Drawer
+   5. Interactive Event Handlers
+   6. Toast Notification System
+   7. Initialization
 ============================================================ */
 
 
 /* ============================================================
-   CONSTANTS & UTILITIES
+   WORKFLOW CONSTANTS
+   These values are the permanent status contract for the
+   NuloOS ecosystem. Use in all future integrations:
+   Google Sheets, Apps Script, Supabase, Twilio, Calendar.
 ============================================================ */
+
+const STATUS =
+{
+    NEW_REQUEST:      'NEW_REQUEST',
+    AWAITING_PAYMENT: 'AWAITING_PAYMENT',
+    CONFIRMED:        'CONFIRMED',
+    IN_PRODUCTION:    'IN_PRODUCTION',
+    PENDING_PICKUP:   'PENDING_PICKUP',
+    COMPLETED:        'COMPLETED',
+    CANCELLED:        'CANCELLED'
+};
+
+// User-facing labels — decoupled from internal status values
+const STATUS_LABELS =
+{
+    NEW_REQUEST:      'New Request',
+    AWAITING_PAYMENT: 'Awaiting Payment',
+    CONFIRMED:        'Confirmed',
+    IN_PRODUCTION:    'In Production',
+    PENDING_PICKUP:   'Pending Pickup',
+    COMPLETED:        'Completed',
+    CANCELLED:        'Cancelled',
+    paid:             'Paid',
+    unpaid:           'Unpaid'
+};
+
+// Workflow color system — permanent design language
+const STATUS_BADGE_MAP =
+{
+    NEW_REQUEST:      'statusNewRequest',
+    AWAITING_PAYMENT: 'statusAwaitingPayment',
+    CONFIRMED:        'statusConfirmed',
+    IN_PRODUCTION:    'statusInProduction',
+    PENDING_PICKUP:   'statusPendingPickup',
+    COMPLETED:        'statusCompleted',
+    CANCELLED:        'statusCancelled',
+    paid:             'badgePaid',
+    unpaid:           'badgeUnpaid'
+};
+
+// Full 6-stage workflow timeline — IN_PRODUCTION is a permanent manual status
+const WORKFLOW_STEPS = ['NEW_REQUEST', 'AWAITING_PAYMENT', 'CONFIRMED', 'IN_PRODUCTION', 'PENDING_PICKUP', 'COMPLETED'];
+
+// Maps each status to its position in the workflow timeline
+const WORKFLOW_POSITION =
+{
+    NEW_REQUEST:      0,
+    AWAITING_PAYMENT: 1,
+    CONFIRMED:        2,
+    IN_PRODUCTION:    3,
+    PENDING_PICKUP:   4,
+    COMPLETED:        5
+};
 
 const PAGE_TITLES =
 {
     dashboard:  'Dashboard',
     orders:     'Orders',
     production: 'Production',
-    customers:  'Customer List',
+    customers:  'Customers',
     reviews:    'Reviews',
     reports:    'Reports',
     settings:   'Settings',
     help:       'Help & Support'
 };
 
-const STATUS_LABELS =
-{
-    newRequest:     'New Request',
-    pendingPayment: 'Pending Payment',
-    confirmed:      'Confirmed',
-    inProduction:   'In Production',
-    readyForPickup: 'Ready for Pickup',
-    completed:      'Completed',
-    cancelled:      'Cancelled',
-    paid:           'Paid',
-    unpaid:         'Unpaid'
-};
+// Tab definitions — keys are decoupled from status values
+// because confirmedQueue and todaysProduction share CONFIRMED status
+const ORDER_TABS =
+[
+    { key: 'newRequest',       label: 'New Requests' },
+    { key: 'awaitingPayment',  label: 'Awaiting Payment' },
+    { key: 'confirmedQueue',   label: 'Confirmed Queue' },
+    { key: 'todaysProduction', label: "Today's Production" },
+    { key: 'pendingPickup',    label: 'Pending Pickup' },
+    { key: 'completed',        label: 'Completed' },
+    { key: 'cancelled',        label: 'Cancelled' }
+];
 
-const STATUS_BADGE_MAP =
-{
-    newRequest:     'badgeNew',
-    pendingPayment: 'badgeContacted',
-    confirmed:      'badgeConfirmed',
-    inProduction:   'badgePreparing',
-    readyForPickup: 'badgeReady',
-    completed:      'badgePickedUp',
-    cancelled:      'badgeCancelled',
-    paid:           'badgePaid',
-    unpaid:         'badgeUnpaid'
-};
 
-const STATUS_NEXT =
-{
-    newRequest:     'pendingPayment',
-    pendingPayment: 'confirmed',
-    confirmed:      'inProduction',
-    inProduction:   'readyForPickup',
-    readyForPickup: 'completed'
-};
-
-const STATUS_NEXT_LABEL =
-{
-    newRequest:     'Mark Contacted',
-    pendingPayment: 'Mark Confirmed',
-    confirmed:      'Start Making',
-    inProduction:   'Mark Ready',
-    readyForPickup: 'Mark Picked Up'
-};
+/* ============================================================
+   UTILITY FUNCTIONS
+============================================================ */
 
 function formatDate(dateStr)
 {
@@ -120,12 +150,12 @@ function formatCurrency(amount)
 
 }
 
-function buildBadge(status)
+function buildBadge(statusOrPayment)
 {
 
-    const cssClass = STATUS_BADGE_MAP[status] || 'badgeGray';
+    const cssClass = STATUS_BADGE_MAP[statusOrPayment] || 'statusCompleted';
 
-    const label = STATUS_LABELS[status] || status;
+    const label = STATUS_LABELS[statusOrPayment] || statusOrPayment;
 
     return `<span class="badge ${cssClass}">${label}</span>`;
 
@@ -159,54 +189,6 @@ function getInitials(name)
 
 }
 
-function buildPhoneDisplay(phone)
-{
-
-    if (!phone)
-    {
-        return '—';
-    }
-
-    const digits = phone.replace(/\D/g, '');
-
-    return `<span class="phoneText">${phone}</span><a class="phoneTel" href="tel:${digits}">${phone}</a>`;
-
-}
-
-function countNewRequests()
-{
-
-    return ORDERS.filter(function(o) { return o.status === 'newRequest'; }).length;
-
-}
-
-function getTodaysGoodiesInfo()
-{
-
-    const day          = DEMO_DAY_OF_WEEK;
-    const productionDays = BAKERY_CONFIG.productionDays;
-    const allDays      = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-
-    if (productionDays.includes(day))
-    {
-        return { label: "Today's Goodies", pickupDay: day, pickupDate: DEMO_TODAY };
-    }
-
-    const todayIndex = allDays.indexOf(day);
-
-    for (var i = 1; i <= 7; i++)
-    {
-        const nextDay = allDays[(todayIndex + i) % 7];
-        if (productionDays.includes(nextDay))
-        {
-            return { label: nextDay + "'s Goodies", pickupDay: nextDay, pickupDate: null };
-        }
-    }
-
-    return { label: "Today's Goodies", pickupDay: day, pickupDate: DEMO_TODAY };
-
-}
-
 function getTimeGreeting()
 {
 
@@ -223,6 +205,49 @@ function getTimeGreeting()
     }
 
     return 'Good evening';
+
+}
+
+// Filters the ORDERS array by tab key, driven entirely by order status.
+function filterOrdersByTab(tab)
+{
+
+    if (tab === 'newRequest')
+    {
+        return ORDERS.filter(function(o) { return o.status === STATUS.NEW_REQUEST; });
+    }
+
+    if (tab === 'awaitingPayment')
+    {
+        return ORDERS.filter(function(o) { return o.status === STATUS.AWAITING_PAYMENT; });
+    }
+
+    if (tab === 'confirmedQueue')
+    {
+        return ORDERS.filter(function(o) { return o.status === STATUS.CONFIRMED; });
+    }
+
+    if (tab === 'todaysProduction')
+    {
+        return ORDERS.filter(function(o) { return o.status === STATUS.IN_PRODUCTION; });
+    }
+
+    if (tab === 'pendingPickup')
+    {
+        return ORDERS.filter(function(o) { return o.status === STATUS.PENDING_PICKUP; });
+    }
+
+    if (tab === 'completed')
+    {
+        return ORDERS.filter(function(o) { return o.status === STATUS.COMPLETED; });
+    }
+
+    if (tab === 'cancelled')
+    {
+        return ORDERS.filter(function(o) { return o.status === STATUS.CANCELLED; });
+    }
+
+    return [];
 
 }
 
@@ -291,6 +316,8 @@ function updatePageTitle(page)
 function renderPage(page, opts)
 {
 
+    closeOrderDrawer();
+
     const contentArea = document.getElementById('contentArea');
 
     if (!contentArea)
@@ -323,36 +350,12 @@ function renderPage(page, opts)
 function afterRender(page, opts)
 {
 
-    if (page === 'dashboard')
-    {
-        initializeDashboardActions();
-    }
-
-    if (page === 'orders')
-    {
-        initializeOrdersTabs(opts && opts.tab ? opts.tab : 'newRequest');
-        initializeOrdersActions();
-    }
-
-    if (page === 'production')
-    {
-        initializeProductionActions();
-    }
-
-    if (page === 'reviews')
-    {
-        initializeReviewsActions();
-    }
-
-    if (page === 'settings')
-    {
-        initializeSettingsInteractions();
-    }
-
-    if (page === 'help')
-    {
-        initializeHelpAccordion();
-    }
+    if (page === 'dashboard')  { initializeDashboardActions(); }
+    if (page === 'orders')     { initializeOrdersTabs(); initializeOrdersActions(); }
+    if (page === 'production') { initializeProductionActions(); }
+    if (page === 'reviews')    { initializeReviewsActions(); }
+    if (page === 'settings')   { initializeSettingsInteractions(); }
+    if (page === 'help')       { initializeHelpAccordion(); }
 
 }
 
@@ -364,8 +367,7 @@ function afterRender(page, opts)
 function renderDashboardPage()
 {
 
-    const greeting = getTimeGreeting();
-
+    const greeting       = getTimeGreeting();
     const ownerFirstName = BAKERY_CONFIG.ownerFullName
         ? BAKERY_CONFIG.ownerFullName.split(' ')[0]
         : BAKERY_CONFIG.ownerName;
@@ -377,15 +379,31 @@ function renderDashboardPage()
         </div>
     `;
 
+    // ── Workflow KPI counts (mirror workflow stage labels exactly) ──
 
-    const newRequestCount  = ORDERS.filter(function(o) { return o.status === 'newRequest'; }).length;
-    const confirmedCount   = ORDERS.filter(function(o) { return o.status === 'confirmed'; }).length;
-    const ordersThisWeek   = REPORTS_DATA.weeklyRevenueSummary.orderCount;
-    const todaysGoodies    = getTodaysGoodiesInfo();
-    const goodiesCount     = ORDERS.filter(function(o)
+    const newRequestCount = ORDERS.filter(function(o)
     {
-        return o.pickupDay === todaysGoodies.pickupDay
-            && ['confirmed', 'inProduction', 'readyForPickup'].includes(o.status);
+        return o.status === STATUS.NEW_REQUEST;
+    }).length;
+
+    const awaitingPaymentCount = ORDERS.filter(function(o)
+    {
+        return o.status === STATUS.AWAITING_PAYMENT;
+    }).length;
+
+    const confirmedQueueCount = ORDERS.filter(function(o)
+    {
+        return o.status === STATUS.CONFIRMED;
+    }).length;
+
+    const todaysProductionCount = ORDERS.filter(function(o)
+    {
+        return o.status === STATUS.IN_PRODUCTION;
+    }).length;
+
+    const pendingPickupCount = ORDERS.filter(function(o)
+    {
+        return o.status === STATUS.PENDING_PICKUP;
     }).length;
 
     const kpiCards = `
@@ -393,53 +411,67 @@ function renderDashboardPage()
 
             <div class="kpiCard" style="cursor:pointer;" onclick="navigateTo('orders', {tab:'newRequest'})">
                 <div class="kpiTop">
-                    <span class="kpiLabel">New Order Requests</span>
-                    <span class="kpiIcon iconBlue"><i class="fa-solid fa-inbox"></i></span>
+                    <span class="kpiLabel">New Requests</span>
+                    <span class="kpiIcon iconPurple"><i class="fa-solid fa-inbox"></i></span>
                 </div>
                 <div class="kpiValue">${newRequestCount}</div>
                 <div class="kpiSub">Awaiting your response</div>
             </div>
 
-            <div class="kpiCard" style="cursor:pointer;" onclick="navigateTo('orders', {tab:'confirmed'})">
+            <div class="kpiCard" style="cursor:pointer;" onclick="navigateTo('orders', {tab:'awaitingPayment'})">
                 <div class="kpiTop">
-                    <span class="kpiLabel">Confirmed Orders</span>
-                    <span class="kpiIcon iconGreen"><i class="fa-solid fa-circle-check"></i></span>
+                    <span class="kpiLabel">Awaiting Payment</span>
+                    <span class="kpiIcon iconRed"><i class="fa-solid fa-clock"></i></span>
                 </div>
-                <div class="kpiValue">${confirmedCount}</div>
-                <div class="kpiSub">Paid &amp; confirmed</div>
+                <div class="kpiValue">${awaitingPaymentCount}</div>
+                <div class="kpiSub">Contacted, payment pending</div>
             </div>
 
-            <div class="kpiCard">
+            <div class="kpiCard" style="cursor:pointer;" onclick="navigateTo('orders', {tab:'confirmedQueue'})">
                 <div class="kpiTop">
-                    <span class="kpiLabel">Orders This Week</span>
-                    <span class="kpiIcon iconPurple"><i class="fa-solid fa-calendar-week"></i></span>
+                    <span class="kpiLabel">Confirmed Queue</span>
+                    <span class="kpiIcon iconBlue"><i class="fa-solid fa-circle-check"></i></span>
                 </div>
-                <div class="kpiValue">${ordersThisWeek}</div>
-                <div class="kpiSub">Jun 23 – Jun 30</div>
+                <div class="kpiValue">${confirmedQueueCount}</div>
+                <div class="kpiSub">Paid &amp; scheduled</div>
             </div>
 
             <div class="kpiCard" style="cursor:pointer;" onclick="navigateTo('production')">
                 <div class="kpiTop">
-                    <span class="kpiLabel">${todaysGoodies.label}</span>
+                    <span class="kpiLabel">Today&rsquo;s Production</span>
                     <span class="kpiIcon iconAmber"><i class="fa-solid fa-fire-burner"></i></span>
                 </div>
-                <div class="kpiValue">${goodiesCount}</div>
-                <div class="kpiSub">${goodiesCount === 1 ? '1 order' : goodiesCount + ' orders'} in ${todaysGoodies.pickupDay}'s queue</div>
+                <div class="kpiValue">${todaysProductionCount}</div>
+                <div class="kpiSub">Orders to make today</div>
+            </div>
+
+            <div class="kpiCard" style="cursor:pointer;" onclick="navigateTo('orders', {tab:'pendingPickup'})">
+                <div class="kpiTop">
+                    <span class="kpiLabel">Pending Pickup</span>
+                    <span class="kpiIcon iconGreen"><i class="fa-solid fa-bag-shopping"></i></span>
+                </div>
+                <div class="kpiValue">${pendingPickupCount}</div>
+                <div class="kpiSub">Made &amp; waiting for customer</div>
             </div>
 
         </div>
     `;
 
+    // ── Action Required ──
+
     const needsAttention = ORDERS.filter(function(o)
     {
-        return o.status === 'newRequest' || o.status === 'pendingPayment';
+        return o.status === STATUS.NEW_REQUEST || o.status === STATUS.AWAITING_PAYMENT;
     });
 
     const attentionItems = needsAttention.length > 0
         ? needsAttention.map(function(order)
         {
+
+            const tabKey = order.status === STATUS.NEW_REQUEST ? 'newRequest' : 'awaitingPayment';
+
             return `
-                <div class="recentRequestItem" style="cursor:pointer;" onclick="navigateTo('orders', {tab:'${order.status}'})">
+                <div class="recentRequestItem" style="cursor:pointer;" onclick="navigateTo('orders', {tab:'${tabKey}'})">
                     <div class="recentRequestInfo">
                         <div class="recentRequestName">${order.customer}</div>
                         <div class="recentRequestDetail">${order.products} · ${order.pickupDay} ${formatDate(order.pickupDate)}</div>
@@ -447,16 +479,16 @@ function renderDashboardPage()
                     ${buildBadge(order.status)}
                 </div>
             `;
+
         }).join('')
         : `<div class="emptyState"><i class="fa-solid fa-check-circle" style="margin-bottom:0.5rem;font-size:1.5rem;color:var(--clrGreen);"></i><div class="emptyStateTitle">All clear</div><div class="emptyStateSub">No requests need attention</div></div>`;
 
-    const productionActive = ORDERS.filter(function(o)
-    {
-        return ['inProduction', 'readyForPickup'].includes(o.status);
-    });
+    // ── Pending Pickup widget ──
 
-    const productionItems = productionActive.length > 0
-        ? productionActive.map(function(order)
+    const pendingPickupOrders = ORDERS.filter(function(o) { return o.status === STATUS.PENDING_PICKUP; });
+
+    const pendingPickupItems = pendingPickupOrders.length > 0
+        ? pendingPickupOrders.map(function(order)
         {
             return `
                 <div class="productionQueueItem">
@@ -464,18 +496,19 @@ function renderDashboardPage()
                         <div class="pqiCustomer">${order.customer}</div>
                         <div class="pqiProducts">${order.products}</div>
                     </div>
-                    <div class="pqiTime">${order.pickupDay}</div>
+                    <div class="pqiTime">${order.pickupTime || order.pickupDay}</div>
                     ${buildBadge(order.status)}
                 </div>
             `;
         }).join('')
-        : `<div class="emptyState"><i class="fa-solid fa-layer-group" style="margin-bottom:0.5rem;font-size:1.5rem;color:var(--clrTextDim);"></i><div class="emptyStateTitle">Nothing in production</div><div class="emptyStateSub">Confirmed orders will appear here</div></div>`;
+        : `<div class="emptyState"><i class="fa-solid fa-bag-shopping" style="margin-bottom:0.5rem;font-size:1.5rem;color:var(--clrTextDim);"></i><div class="emptyStateTitle">Nothing waiting for pickup</div><div class="emptyStateSub">Ready orders will appear here</div></div>`;
 
-    const upcomingPickups = ORDERS
+    // ── Upcoming Confirmed Queue ──
+
+    const upcomingOrders = ORDERS
         .filter(function(o)
         {
-            return o.pickupDate >= DEMO_TODAY
-                && !['cancelled', 'completed'].includes(o.status);
+            return o.status === STATUS.CONFIRMED && o.pickupDate >= DEMO_TODAY;
         })
         .sort(function(a, b) { return a.pickupDate.localeCompare(b.pickupDate); })
         .slice(0, 5)
@@ -489,6 +522,8 @@ function renderDashboardPage()
                 </div>
             `;
         }).join('');
+
+    // ── Activity Log ──
 
     const activityItems = ACTIVITY_LOG.map(function(item)
     {
@@ -523,25 +558,25 @@ function renderDashboardPage()
                 </div>
             </div>
 
-            <!-- Production Queue -->
+            <!-- Pending Pickup -->
             <div class="widgetCard">
                 <div class="widgetHeader">
-                    <span class="widgetTitle">In Production</span>
-                    <span class="widgetMeta">${productionActive.length} active</span>
+                    <span class="widgetTitle">Pending Pickup</span>
+                    <span class="widgetMeta">${pendingPickupOrders.length} ready</span>
                 </div>
                 <div class="widgetBody">
-                    ${productionItems}
+                    ${pendingPickupItems}
                 </div>
             </div>
 
-            <!-- Upcoming Pickups -->
+            <!-- Upcoming Confirmed Queue -->
             <div class="widgetCard">
                 <div class="widgetHeader">
-                    <span class="widgetTitle">Upcoming Pickups</span>
-                    <span class="widgetMeta">Next 7 days</span>
+                    <span class="widgetTitle">Upcoming Orders</span>
+                    <span class="widgetMeta">Confirmed Queue</span>
                 </div>
                 <div class="widgetBody">
-                    ${upcomingPickups || '<div class="emptyState"><div class="emptyStateTitle">No upcoming pickups</div></div>'}
+                    ${upcomingOrders || '<div class="emptyState"><div class="emptyStateTitle">No upcoming orders</div></div>'}
                 </div>
             </div>
 
@@ -565,9 +600,14 @@ function renderDashboardPage()
 function initializeDashboardActions()
 {
 
-    // Dashboard page actions wired here
+    // Dashboard widget interactions wired here
 
 }
+
+
+/* ============================================================
+   NEW ORDER REQUEST MODAL
+============================================================ */
 
 function showNewOrderRequestModal()
 {
@@ -700,26 +740,18 @@ function showNewOrderRequestModal()
    ORDERS PAGE
 ============================================================ */
 
-const ORDER_TABS =
-[
-    { key: 'newRequest',     label: 'New Requests' },
-    { key: 'pendingPayment', label: 'Pending Payment' },
-    { key: 'confirmed',      label: 'Confirmed' },
-    { key: 'inProduction',   label: 'In Production' },
-    { key: 'readyForPickup', label: 'Ready for Pickup' },
-    { key: 'completed',      label: 'Completed' },
-    { key: 'cancelled',      label: 'Cancelled' }
-];
-
 function renderOrdersPage(opts)
 {
 
     const activeTab = (opts && opts.tab) ? opts.tab : 'newRequest';
 
+    // Phone visible on tabs where calling the customer is the next action
+    const showPhone = (activeTab === 'newRequest' || activeTab === 'awaitingPayment');
+
     const tabsHTML = ORDER_TABS.map(function(tab)
     {
 
-        const count = ORDERS.filter(function(o) { return o.status === tab.key; }).length;
+        const count = filterOrdersByTab(tab.key).length;
 
         const badgeHTML = count > 0 ? `<span class="ordersTabBadge">${count}</span>` : '';
 
@@ -727,42 +759,25 @@ function renderOrdersPage(opts)
 
     }).join('');
 
-    const filteredOrders = ORDERS.filter(function(o) { return o.status === activeTab; });
+    const filteredOrders = filterOrdersByTab(activeTab);
+
+    // Confirmed Queue: sorted by pickup date — supports future calendar view
+    if (activeTab === 'confirmedQueue')
+    {
+        filteredOrders.sort(function(a, b) { return a.pickupDate.localeCompare(b.pickupDate); });
+    }
 
     const tableRows = filteredOrders.length > 0
         ? filteredOrders.map(function(order)
         {
-
-            const nextStatus = STATUS_NEXT[order.status];
-
-            const actionLabel = STATUS_NEXT_LABEL[order.status];
-
-            const primaryAction = nextStatus
-                ? `<button class="btn btnPrimary btnSm btnUpdateStatus" data-id="${order.id}" data-next="${nextStatus}">${actionLabel}</button>`
-                : '';
-
-            const cancelAction = !['completed', 'cancelled'].includes(order.status)
-                ? `<button class="btn btnRed btnSm btnCancelOrder" data-id="${order.id}">Cancel</button>`
-                : '';
-
-            return `
-                <tr>
-                    <td class="tdId">${order.id}</td>
-                    <td class="tdCustomer">${order.customer}</td>
-                    <td class="tdMuted">${order.products}</td>
-                    <td class="tdMuted">${order.pickupDay}${order.pickupDate ? ' · ' + formatDate(order.pickupDate) : ''}</td>
-                    <td>${buildBadge(order.paymentStatus)}</td>
-                    <td>
-                        <div class="tdActions">
-                            ${primaryAction}
-                            ${cancelAction}
-                        </div>
-                    </td>
-                </tr>
-            `;
-
+            return buildOrderTableRow(order, activeTab, showPhone);
         }).join('')
-        : `<tr><td colspan="6" style="text-align:center; padding: 2rem; color: var(--clrTextMuted); font-size: 0.84rem;">No orders in this status</td></tr>`;
+        : `<tr><td colspan="6" style="text-align:center; padding: 2rem; color: var(--clrTextMuted); font-size: 0.84rem;">No orders in this stage</td></tr>`;
+
+    const activeCount = ORDERS.filter(function(o)
+    {
+        return o.status !== STATUS.COMPLETED && o.status !== STATUS.CANCELLED;
+    }).length;
 
     return `
 
@@ -770,12 +785,8 @@ function renderOrdersPage(opts)
 
             <div class="pageHeaderLeft">
                 <div class="pageHeaderTitle">Orders</div>
-                <div class="pageHeaderSub">${ORDERS.filter(function(o) { return !['completed','cancelled'].includes(o.status); }).length} active · ${ORDERS.length} total</div>
+                <div class="pageHeaderSub">${activeCount} active · ${ORDERS.length} total</div>
             </div>
-
-            <button class="btn btnPrimary" id="ordersNewRequestBtn">
-                <i class="fa-solid fa-plus"></i> New Request
-            </button>
 
         </div>
 
@@ -810,208 +821,842 @@ function renderOrdersPage(opts)
 
 }
 
-function initializeOrdersTabs(defaultTab)
+function buildOrderTableRow(order, tab, showPhone)
 {
 
-    const tabs = document.querySelectorAll('.ordersTab');
+    const customerCell = showPhone && order.phone
+        ? `<td><div class="tdCustomer">${order.customer}</div><span class="orderPhone">${order.phone}</span></td>`
+        : `<td class="tdCustomer">${order.customer}</td>`;
 
-    tabs.forEach(function(tab)
+    const pickupCell = order.pickupDate
+        ? `${order.pickupDay} · ${formatDate(order.pickupDate)}${order.pickupTime ? ' · ' + order.pickupTime : ''}`
+        : order.pickupDay;
+
+    const actions = buildOrderRowActions(order, tab);
+
+    return `
+        <tr class="orderTableRow" data-id="${order.id}">
+            <td class="tdId">${order.id}</td>
+            ${customerCell}
+            <td class="tdMuted">${order.products}</td>
+            <td class="tdMuted">${pickupCell}</td>
+            <td>${buildBadge(order.paymentStatus)}</td>
+            <td>
+                <div class="tdActions">
+                    ${actions}
+                </div>
+            </td>
+        </tr>
+    `;
+
+}
+
+function buildOrderRowActions(order, tab)
+{
+
+    // ── New Requests: Contact Customer, Mark Paid, Reject ──
+    if (tab === 'newRequest')
+    {
+        return `
+            <button class="btn btnGreen btnSm btnMarkPaid" data-id="${order.id}">Mark Paid</button>
+            <button class="btn btnPrimary btnSm btnContactCustomer" data-id="${order.id}">Contact Customer</button>
+            <button class="btn btnRed btnSm btnRejectOrder" data-id="${order.id}">Reject</button>
+        `;
+    }
+
+    // ── Awaiting Payment: Mark Paid, Cancel ──
+    if (tab === 'awaitingPayment')
+    {
+        return `
+            <button class="btn btnGreen btnSm btnMarkPaid" data-id="${order.id}">Mark Paid</button>
+            <button class="btn btnRed btnSm btnCancelOrder" data-id="${order.id}">Cancel</button>
+        `;
+    }
+
+    // ── Confirmed Queue: read-only, awaiting Apps Script to move to IN_PRODUCTION ──
+    if (tab === 'confirmedQueue')
+    {
+        return `<span style="font-size:0.75rem;color:var(--clrTextMuted);">Schedules on ${order.pickupDay}</span>`;
+    }
+
+    // ── Today's Production: Mark Ready for Pickup ──
+    if (tab === 'todaysProduction')
+    {
+        return `<button class="btn btnGreen btnSm btnMarkReady" data-id="${order.id}">Mark Ready for Pickup</button>`;
+    }
+
+    // ── Pending Pickup: Complete Pickup ──
+    if (tab === 'pendingPickup')
+    {
+        return `<button class="btn btnPrimary btnSm btnCompletePickup" data-id="${order.id}">Complete Pickup</button>`;
+    }
+
+    return '';
+
+}
+
+function initializeOrdersTabs()
+{
+
+    document.querySelectorAll('.ordersTab').forEach(function(tab)
     {
 
         tab.addEventListener('click', function()
         {
-
-            const tabKey = tab.dataset.tab;
-
-            navigateTo('orders', { tab: tabKey });
-
+            navigateTo('orders', { tab: tab.dataset.tab });
         });
 
     });
-
-    const ordersNewBtn = document.getElementById('ordersNewRequestBtn');
-
-    if (ordersNewBtn)
-    {
-        ordersNewBtn.addEventListener('click', showNewOrderRequestModal);
-    }
 
 }
 
 function initializeOrdersActions()
 {
 
-    const updateBtns = document.querySelectorAll('.btnUpdateStatus');
+    // ── Contact Customer (NEW_REQUEST → AWAITING_PAYMENT) ──
 
-    updateBtns.forEach(function(btn)
+    document.querySelectorAll('.btnContactCustomer').forEach(function(btn)
     {
 
         btn.addEventListener('click', function()
         {
 
-            const id = btn.dataset.id;
-
-            const nextStatus = btn.dataset.next;
-
+            const id    = btn.dataset.id;
             const order = ORDERS.find(function(o) { return o.id === id; });
 
             if (order)
             {
-                order.status = nextStatus;
+                order.status = STATUS.AWAITING_PAYMENT;
+
+                // [TWILIO HOOK: Log outbound contact attempt]
+                // [SUPABASE HOOK: PATCH orders table status]
+
+                showToast('info', 'Call or text ' + order.customer + ' and share payment details.');
+
+                renderPage('orders', { tab: 'awaitingPayment' });
+            }
+
+        });
+
+    });
+
+    // ── Mark Paid (→ CONFIRMED, from any pre-confirmation stage) ──
+
+    document.querySelectorAll('.btnMarkPaid').forEach(function(btn)
+    {
+
+        btn.addEventListener('click', function()
+        {
+
+            const id    = btn.dataset.id;
+            const order = ORDERS.find(function(o) { return o.id === id; });
+
+            if (order)
+            {
+                order.paymentStatus = 'paid';
+                order.status        = STATUS.CONFIRMED;
+
+                // [SUPABASE HOOK: PATCH orders table paymentStatus + status]
+                // [TWILIO HOOK: SMS confirmation to customer]
+                // [CALENDAR HOOK: Create Google Calendar event for pickup date]
+
+                showToast('success', id + ' paid and confirmed.');
+
+                renderPage('orders', { tab: 'confirmedQueue' });
+            }
+
+        });
+
+    });
+
+    // ── Reject Order (NEW_REQUEST → CANCELLED) ──
+
+    document.querySelectorAll('.btnRejectOrder').forEach(function(btn)
+    {
+
+        btn.addEventListener('click', function()
+        {
+
+            const id    = btn.dataset.id;
+            const order = ORDERS.find(function(o) { return o.id === id; });
+
+            if (!order)
+            {
+                return;
+            }
+
+            const confirmed = window.confirm('Reject order ' + id + ' from ' + order.customer + '?');
+
+            if (!confirmed)
+            {
+                return;
+            }
+
+            order.status = STATUS.CANCELLED;
+
+            // [SUPABASE HOOK: PATCH orders table status]
+
+            showToast('info', id + ' rejected.');
+
+            renderPage('orders', { tab: 'newRequest' });
+
+        });
+
+    });
+
+    // ── Cancel Order (AWAITING_PAYMENT → CANCELLED) ──
+
+    document.querySelectorAll('.btnCancelOrder').forEach(function(btn)
+    {
+
+        btn.addEventListener('click', function()
+        {
+
+            const id    = btn.dataset.id;
+            const order = ORDERS.find(function(o) { return o.id === id; });
+
+            if (!order)
+            {
+                return;
+            }
+
+            const confirmed = window.confirm('Cancel order ' + id + ' for ' + order.customer + '?');
+
+            if (!confirmed)
+            {
+                return;
+            }
+
+            order.status = STATUS.CANCELLED;
+
+            // [SUPABASE HOOK: PATCH orders table status]
+
+            showToast('info', id + ' cancelled.');
+
+            renderPage('orders', { tab: 'cancelled' });
+
+        });
+
+    });
+
+    // ── Mark Ready for Pickup (IN_PRODUCTION → PENDING_PICKUP) ──
+
+    document.querySelectorAll('.btnMarkReady').forEach(function(btn)
+    {
+
+        btn.addEventListener('click', function()
+        {
+
+            const id    = btn.dataset.id;
+            const order = ORDERS.find(function(o) { return o.id === id; });
+
+            if (order)
+            {
+                order.status = STATUS.PENDING_PICKUP;
 
                 // [SUPABASE HOOK: PATCH orders table status]
-                // [TWILIO HOOK: SMS on confirmed/readyForPickup]
+                // [TWILIO HOOK: SMS to customer — order is ready]
 
-                showToast('success', id + ' → ' + STATUS_LABELS[nextStatus]);
+                showToast('success', id + ' ready for pickup.');
 
-                renderPage('orders', { tab: nextStatus });
+                renderPage('orders', { tab: 'pendingPickup' });
             }
 
         });
 
     });
 
-    const cancelBtns = document.querySelectorAll('.btnCancelOrder');
+    // ── Complete Pickup (PENDING_PICKUP → COMPLETED) ──
 
-    cancelBtns.forEach(function(btn)
+    document.querySelectorAll('.btnCompletePickup').forEach(function(btn)
     {
 
         btn.addEventListener('click', function()
         {
 
-            const id = btn.dataset.id;
-
+            const id    = btn.dataset.id;
             const order = ORDERS.find(function(o) { return o.id === id; });
 
             if (order)
             {
-                order.status = 'cancelled';
+                order.status = STATUS.COMPLETED;
 
-                showToast('info', id + ' cancelled.');
+                // [SUPABASE HOOK: PATCH orders table status]
+                // [REVIEWS HOOK: Trigger post-pickup SMS feedback survey]
 
-                renderPage('orders', { tab: 'cancelled' });
+                showToast('success', id + ' — pickup completed.');
+
+                renderPage('orders', { tab: 'completed' });
             }
 
         });
 
     });
+
+    // ── Row Click → Order Detail Drawer ──
+
+    const tbody = document.getElementById('ordersTableBody');
+
+    if (tbody)
+    {
+
+        tbody.addEventListener('click', function(e)
+        {
+
+            if (e.target.closest('button'))
+            {
+                return;
+            }
+
+            const row = e.target.closest('.orderTableRow');
+
+            if (row)
+            {
+                showOrderDrawer(row.dataset.id);
+            }
+
+        });
+
+    }
+
+}
+
+
+/* ============================================================
+   ORDER DETAIL DRAWER
+============================================================ */
+
+function showOrderDrawer(orderId)
+{
+
+    const order = ORDERS.find(function(o) { return o.id === orderId; });
+
+    if (!order)
+    {
+        return;
+    }
+
+    closeOrderDrawer();
+
+    // ── Overlay ──
+
+    const overlay = document.createElement('div');
+    overlay.id        = 'orderDrawerOverlay';
+    overlay.className = 'drawerOverlay';
+    overlay.addEventListener('click', closeOrderDrawer);
+    document.body.appendChild(overlay);
+
+    // ── Status Timeline ──
+
+    const isCancelled = order.status === STATUS.CANCELLED;
+    const currentPos  = WORKFLOW_POSITION[order.status] !== undefined
+        ? WORKFLOW_POSITION[order.status]
+        : 0;
+
+    const timelineHTML = isCancelled
+        ? `<div style="font-size: 0.82rem; color: var(--clrRed); font-weight: 600;">Order cancelled.</div>`
+        : WORKFLOW_STEPS.map(function(step, idx)
+        {
+
+            const isDone    = idx < currentPos;
+            const isCurrent = idx === currentPos;
+            const cssClass  = isCurrent
+                ? 'timelineStepCurrent'
+                : isDone
+                    ? 'timelineStepDone'
+                    : 'timelineStepPending';
+
+            return `
+                <div class="timelineStep ${cssClass}">
+                    <div class="timelineStepDot"></div>
+                    <div class="timelineStepLabel">${STATUS_LABELS[step]}</div>
+                </div>
+            `;
+
+        }).join('');
+
+    // ── Actions section (status-driven) ──
+
+    let drawerActionsHTML = '';
+
+    if (order.status === STATUS.NEW_REQUEST)
+    {
+        drawerActionsHTML = `
+            <button class="btn btnPrimary btnSm btnDrawerContactCustomer" data-id="${order.id}">Contact Customer</button>
+            <button class="btn btnGreen btnSm btnDrawerMarkPaid" data-id="${order.id}">Mark Paid</button>
+            <button class="btn btnRed btnSm btnDrawerRejectOrder" data-id="${order.id}">Reject Order</button>
+        `;
+    }
+    else if (order.status === STATUS.AWAITING_PAYMENT)
+    {
+        drawerActionsHTML = `
+            <button class="btn btnGreen btnSm btnDrawerMarkPaid" data-id="${order.id}">Mark Paid</button>
+            <button class="btn btnRed btnSm btnDrawerCancelOrder" data-id="${order.id}">Cancel Order</button>
+        `;
+    }
+    else if (order.status === STATUS.CONFIRMED)
+    {
+        drawerActionsHTML = `<span class="drawerAwaitingNote">Awaiting production day</span>`;
+    }
+    else if (order.status === STATUS.IN_PRODUCTION)
+    {
+        drawerActionsHTML = `<button class="btn btnGreen btnSm btnDrawerReadyForPickup" data-id="${order.id}">Ready for Pickup</button>`;
+    }
+    else if (order.status === STATUS.PENDING_PICKUP)
+    {
+        drawerActionsHTML = `<button class="btn btnPrimary btnSm btnDrawerCompletePickup" data-id="${order.id}">Complete Pickup</button>`;
+    }
+
+    const drawerActionsSection = drawerActionsHTML
+        ? `
+            <div class="drawerSection">
+                <div class="drawerLabel">Actions</div>
+                <div class="drawerActions">
+                    ${drawerActionsHTML}
+                </div>
+            </div>
+        `
+        : '';
+
+    // ── Notes section ──
+
+    const notesSection = order.notes
+        ? `
+            <div class="drawerSection">
+                <div class="drawerLabel">Notes</div>
+                <div class="drawerNotes">${order.notes}</div>
+            </div>
+        `
+        : '';
+
+    const submittedDate = order.submittedAt
+        ? formatDate(order.submittedAt.split('T')[0])
+        : '—';
+
+    // ── Drawer Panel ──
+
+    const drawer = document.createElement('div');
+    drawer.id        = 'orderDrawer';
+    drawer.className = 'orderDrawer';
+
+    drawer.innerHTML = `
+
+        <div class="drawerHeader">
+            <div>
+                <div class="drawerTitle">${order.id}</div>
+                ${buildBadge(order.status)}
+            </div>
+            <button class="drawerCloseBtn" id="drawerCloseBtn" aria-label="Close drawer">&#x2715;</button>
+        </div>
+
+        <div class="drawerBody">
+
+            <div class="drawerSection">
+                <div class="drawerLabel">Customer</div>
+                <div class="drawerValue">${order.customer}</div>
+                ${order.phone ? `<a class="drawerPhoneLink" href="tel:${order.phone.replace(/\D/g, '')}">${order.phone}</a>` : ''}
+            </div>
+
+            <div class="drawerSection">
+                <div class="drawerLabel">Products</div>
+                <div class="drawerValue">${order.products}</div>
+            </div>
+
+            <div class="drawerSection">
+                <div class="drawerLabel">Pickup</div>
+                <div class="drawerValue">${order.pickupDay}${order.pickupDate ? ' · ' + formatDate(order.pickupDate) : ''}${order.pickupTime ? ' · ' + order.pickupTime : ''}</div>
+            </div>
+
+            ${notesSection}
+
+            <div class="drawerSection">
+                <div class="drawerLabel">Payment</div>
+                <div class="drawerPaymentRow">
+                    ${buildBadge(order.paymentStatus)}
+                </div>
+            </div>
+
+            <div class="drawerSection">
+                <div class="drawerLabel">Order Progress</div>
+                <div class="drawerTimeline">
+                    ${timelineHTML}
+                </div>
+            </div>
+
+            ${drawerActionsSection}
+
+            <div class="drawerSection drawerMetaSection">
+                <div class="drawerLabel">Submitted</div>
+                <div class="drawerValue">${submittedDate}</div>
+            </div>
+
+        </div>
+
+    `;
+
+    document.body.appendChild(drawer);
+
+    requestAnimationFrame(function()
+    {
+        drawer.classList.add('isOpen');
+        overlay.classList.add('isVisible');
+    });
+
+    document.getElementById('drawerCloseBtn').addEventListener('click', closeOrderDrawer);
+
+    // ── Contact Customer (drawer) ──
+
+    const drawerContactBtn = drawer.querySelector('.btnDrawerContactCustomer');
+
+    if (drawerContactBtn)
+    {
+
+        drawerContactBtn.addEventListener('click', function()
+        {
+
+            const id    = drawerContactBtn.dataset.id;
+            const found = ORDERS.find(function(o) { return o.id === id; });
+
+            if (found)
+            {
+                found.status = STATUS.AWAITING_PAYMENT;
+
+                // [TWILIO HOOK: Log outbound contact attempt]
+                // [SUPABASE HOOK: PATCH orders table status]
+
+                showToast('info', 'Call or text ' + found.customer + ' and share payment details.');
+
+                closeOrderDrawer();
+
+                renderPage('orders', { tab: 'awaitingPayment' });
+            }
+
+        });
+
+    }
+
+    // ── Mark Paid (drawer) ──
+
+    const drawerMarkPaidBtn = drawer.querySelector('.btnDrawerMarkPaid');
+
+    if (drawerMarkPaidBtn)
+    {
+
+        drawerMarkPaidBtn.addEventListener('click', function()
+        {
+
+            const id    = drawerMarkPaidBtn.dataset.id;
+            const found = ORDERS.find(function(o) { return o.id === id; });
+
+            if (found)
+            {
+                found.paymentStatus = 'paid';
+                found.status        = STATUS.CONFIRMED;
+
+                // [SUPABASE HOOK: PATCH orders table paymentStatus + status]
+                // [TWILIO HOOK: SMS confirmation to customer]
+                // [CALENDAR HOOK: Create Google Calendar event for pickup date]
+
+                showToast('success', id + ' paid and confirmed.');
+
+                closeOrderDrawer();
+
+                renderPage('orders', { tab: 'confirmedQueue' });
+            }
+
+        });
+
+    }
+
+    // ── Reject Order (drawer) ──
+
+    const drawerRejectBtn = drawer.querySelector('.btnDrawerRejectOrder');
+
+    if (drawerRejectBtn)
+    {
+
+        drawerRejectBtn.addEventListener('click', function()
+        {
+
+            const id    = drawerRejectBtn.dataset.id;
+            const found = ORDERS.find(function(o) { return o.id === id; });
+
+            if (!found) { return; }
+
+            const ok = window.confirm('Reject order ' + id + ' from ' + found.customer + '?');
+
+            if (!ok) { return; }
+
+            found.status = STATUS.CANCELLED;
+
+            // [SUPABASE HOOK: PATCH orders table status]
+
+            showToast('info', id + ' rejected.');
+
+            closeOrderDrawer();
+
+            renderPage('orders', { tab: 'newRequest' });
+
+        });
+
+    }
+
+    // ── Cancel Order (drawer) ──
+
+    const drawerCancelBtn = drawer.querySelector('.btnDrawerCancelOrder');
+
+    if (drawerCancelBtn)
+    {
+
+        drawerCancelBtn.addEventListener('click', function()
+        {
+
+            const id    = drawerCancelBtn.dataset.id;
+            const found = ORDERS.find(function(o) { return o.id === id; });
+
+            if (!found) { return; }
+
+            const ok = window.confirm('Cancel order ' + id + ' for ' + found.customer + '?');
+
+            if (!ok) { return; }
+
+            found.status = STATUS.CANCELLED;
+
+            // [SUPABASE HOOK: PATCH orders table status]
+
+            showToast('info', id + ' cancelled.');
+
+            closeOrderDrawer();
+
+            renderPage('orders', { tab: 'cancelled' });
+
+        });
+
+    }
+
+    // ── Ready for Pickup (drawer) ──
+
+    const drawerReadyBtn = drawer.querySelector('.btnDrawerReadyForPickup');
+
+    if (drawerReadyBtn)
+    {
+
+        drawerReadyBtn.addEventListener('click', function()
+        {
+
+            const id    = drawerReadyBtn.dataset.id;
+            const found = ORDERS.find(function(o) { return o.id === id; });
+
+            if (found)
+            {
+                found.status = STATUS.PENDING_PICKUP;
+
+                // [SUPABASE HOOK: PATCH orders table status]
+                // [TWILIO HOOK: SMS to customer — order is ready]
+
+                showToast('success', id + ' ready for pickup.');
+
+                closeOrderDrawer();
+
+                renderPage('orders', { tab: 'pendingPickup' });
+            }
+
+        });
+
+    }
+
+    // ── Complete Pickup (drawer) ──
+
+    const drawerCompleteBtn = drawer.querySelector('.btnDrawerCompletePickup');
+
+    if (drawerCompleteBtn)
+    {
+
+        drawerCompleteBtn.addEventListener('click', function()
+        {
+
+            const id    = drawerCompleteBtn.dataset.id;
+            const found = ORDERS.find(function(o) { return o.id === id; });
+
+            if (found)
+            {
+                found.status = STATUS.COMPLETED;
+
+                // [SUPABASE HOOK: PATCH orders table status]
+                // [REVIEWS HOOK: Trigger post-pickup SMS feedback survey]
+
+                showToast('success', id + ' — pickup completed.');
+
+                closeOrderDrawer();
+
+                renderPage('orders', { tab: 'completed' });
+            }
+
+        });
+
+    }
+
+    document.addEventListener('keydown', handleDrawerEsc);
+
+}
+
+function handleDrawerEsc(e)
+{
+
+    if (e.key === 'Escape')
+    {
+        closeOrderDrawer();
+    }
+
+}
+
+function closeOrderDrawer()
+{
+
+    const drawer  = document.getElementById('orderDrawer');
+    const overlay = document.getElementById('orderDrawerOverlay');
+
+    if (drawer)
+    {
+        drawer.classList.remove('isOpen');
+        setTimeout(function() { drawer.remove(); }, 250);
+    }
+
+    if (overlay)
+    {
+        overlay.classList.remove('isVisible');
+        setTimeout(function() { overlay.remove(); }, 250);
+    }
+
+    document.removeEventListener('keydown', handleDrawerEsc);
 
 }
 
 
 /* ============================================================
    PRODUCTION PAGE
+
+   Three sections with single responsibility:
+
+   1. Confirmed Queue — paid orders waiting for their production day.
+      Sorted by pickup date ascending. Data structure is calendar-ready:
+      a future Calendar page needs only to group these by pickupDate.
+
+   2. Today's Production — status === IN_PRODUCTION only.
+      Apps Script moves eligible CONFIRMED orders into IN_PRODUCTION.
+      Production days are configured in Settings via BAKERY_CONFIG.productionDays.
+      No date logic here. No manual movement required by the owner.
+
+   3. Pending Pickup — orders made and waiting for customer arrival.
 ============================================================ */
 
 function renderProductionPage()
 {
 
-    const inProductionOrders   = ORDERS.filter(function(o) { return o.status === 'inProduction'; });
-    const confirmedOrders      = ORDERS.filter(function(o) { return o.status === 'confirmed'; });
-    const readyForPickupOrders = ORDERS.filter(function(o) { return o.status === 'readyForPickup'; });
+    // Confirmed Queue — paid, awaiting Apps Script to move them to IN_PRODUCTION
+    const confirmedQueueOrders = ORDERS
+        .filter(function(o) { return o.status === STATUS.CONFIRMED; })
+        .sort(function(a, b) { return a.pickupDate.localeCompare(b.pickupDate); });
 
-    const totalActive = inProductionOrders.length + confirmedOrders.length + readyForPickupOrders.length;
-
-    const dayGroups = BAKERY_CONFIG.productionDays.map(function(day)
+    // Today's Production — orders Apps Script has moved to IN_PRODUCTION
+    const todaysProductionOrders = ORDERS.filter(function(o)
     {
+        return o.status === STATUS.IN_PRODUCTION;
+    });
 
-        const dayOrders  = inProductionOrders.filter(function(o) { return o.pickupDay === day; });
-        const pickupDate = dayOrders.length > 0 ? dayOrders[0].pickupDate : null;
-        const dateLabel  = pickupDate ? ' · ' + formatDateShort(pickupDate) : '';
+    // Pending Pickup — finished, waiting for customer
+    const pendingPickupOrders = ORDERS.filter(function(o)
+    {
+        return o.status === STATUS.PENDING_PICKUP;
+    });
 
-        const cardsHTML = dayOrders.length > 0
-            ? dayOrders.map(function(order)
-            {
-                const nextStatus  = STATUS_NEXT[order.status];
-                const actionLabel = STATUS_NEXT_LABEL[order.status];
-                const actionBtn   = nextStatus
-                    ? `<button class="btn btnSm btnGreen btnAdvanceProduction" data-id="${order.id}" data-next="${nextStatus}">${actionLabel}</button>`
-                    : '';
-                return `
-                    <div class="productionCard">
-                        <div class="productionCardId">${order.id}</div>
-                        <div class="productionCardCustomer">${order.customer}</div>
-                        <div class="productionCardProducts">${order.products}</div>
-                        <div class="productionCardFooter">
-                            ${buildBadge(order.status)}
-                            <div class="productionCardTime">${order.pickupTime || ''}</div>
-                            ${actionBtn}
-                        </div>
-                    </div>
-                `;
-            }).join('')
-            : `<div class="productionEmpty">No orders in production</div>`;
+    const totalActive = confirmedQueueOrders.length
+        + todaysProductionOrders.length
+        + pendingPickupOrders.length;
 
-        return `
-            <div class="productionDayGroup">
-                <div class="productionDayHeader">
-                    <div>
-                        <div class="productionDayTitle">${day}</div>
-                        <div class="productionDayDate">${dateLabel}</div>
-                    </div>
-                    <div class="productionDayCount">${dayOrders.length}</div>
-                </div>
-                <div class="productionCards">
-                    ${cardsHTML}
-                </div>
-            </div>
-        `;
+    // ── Section 1: Confirmed Queue ──
 
-    }).join('');
-
-    const confirmedRowsHTML = confirmedOrders.length > 0
-        ? confirmedOrders.map(function(order)
+    const confirmedQueueHTML = confirmedQueueOrders.length > 0
+        ? confirmedQueueOrders.map(function(order)
         {
-            const pickupLabel = order.pickupDay + (order.pickupDate ? ' · ' + formatDateShort(order.pickupDate) : '');
+
             return `
                 <div class="productionQueueRow">
                     <div class="pqrId">${order.id}</div>
                     <div class="pqrCustomer">${order.customer}</div>
                     <div class="pqrProducts">${order.products}</div>
-                    <div class="pqrPickup">${pickupLabel}</div>
-                    <button class="btn btnSm btnPrimary btnAdvanceProduction" data-id="${order.id}" data-next="inProduction">Start Production</button>
+                    <div class="pqrPickup">${order.pickupDay} · ${formatDateShort(order.pickupDate)}</div>
+                    <div class="pqrNote">Scheduled for ${order.pickupDay}</div>
+                </div>
+            `;
+
+        }).join('')
+        : `<div class="productionEmpty">No orders in the confirmed queue</div>`;
+
+    // ── Section 2: Today's Production ──
+
+    const todaysProductionHTML = todaysProductionOrders.length > 0
+        ? todaysProductionOrders.map(function(order)
+        {
+            return `
+                <div class="productionCard">
+                    <div class="productionCardId">${order.id}</div>
+                    <div class="productionCardCustomer">${order.customer}</div>
+                    <div class="productionCardProducts">${order.products}</div>
+                    ${order.notes ? `<div class="productionCardNotes">${order.notes}</div>` : ''}
+                    <div class="productionCardFooter">
+                        ${buildBadge(order.status)}
+                        <div class="productionCardTime">${order.pickupTime || ''}</div>
+                        <button class="btn btnGreen btnSm btnAdvanceProduction" data-id="${order.id}" data-next="${STATUS.PENDING_PICKUP}">Mark Ready for Pickup</button>
+                    </div>
                 </div>
             `;
         }).join('')
-        : `<div class="productionEmpty">No confirmed orders awaiting production</div>`;
+        : `<div class="productionEmpty">No orders currently in production. Apps Script will move confirmed orders here when production begins.</div>`;
 
-    const pickupRowsHTML = readyForPickupOrders.length > 0
-        ? readyForPickupOrders.map(function(order)
+    // ── Section 3: Pending Pickup ──
+
+    const pendingPickupHTML = pendingPickupOrders.length > 0
+        ? pendingPickupOrders.map(function(order)
         {
-            const pickupLabel = order.pickupDay + (order.pickupDate ? ' · ' + formatDateShort(order.pickupDate) : '');
+
             return `
                 <div class="pickupQueueRow">
                     <div class="pkrCustomer">${order.customer}</div>
                     <div class="pkrProducts">${order.products}</div>
-                    <div class="pkrTime">${pickupLabel}</div>
-                    <button class="btn btnSm btnGreen btnAdvanceProduction" data-id="${order.id}" data-next="completed">Mark Picked Up</button>
+                    <div class="pkrTime">${order.pickupDay}${order.pickupDate ? ' · ' + formatDateShort(order.pickupDate) : ''}${order.pickupTime ? ' · ' + order.pickupTime : ''}</div>
+                    <button class="btn btnPrimary btnSm btnCompletePickupProduction" data-id="${order.id}">Complete Pickup</button>
                 </div>
             `;
+
         }).join('')
-        : `<div class="productionEmpty">No orders awaiting pickup</div>`;
+        : `<div class="productionEmpty">No orders waiting for pickup</div>`;
 
     return `
 
         <div class="pageHeader">
             <div class="pageHeaderLeft">
                 <div class="pageHeaderTitle">Production</div>
-                <div class="pageHeaderSub">${totalActive} active order${totalActive !== 1 ? 's' : ''} · ${inProductionOrders.length} in production · ${readyForPickupOrders.length} ready for pickup</div>
+                <div class="pageHeaderSub">${totalActive} active order${totalActive !== 1 ? 's' : ''} · ${todaysProductionOrders.length} in today&rsquo;s production · ${pendingPickupOrders.length} pending pickup</div>
             </div>
         </div>
 
-        <div class="productionSectionLabel">In Production</div>
-        <div class="productionDayGroups">
-            ${dayGroups}
+        <div class="productionSectionLabel">Confirmed Queue</div>
+        <div class="productionSectionSub">Paid orders awaiting their production day, sorted by pickup date.</div>
+        <div class="productionQueueTable" style="margin-bottom: 2rem;">
+            ${confirmedQueueHTML}
         </div>
 
-        <div class="productionSectionLabel" style="margin-top: 2rem;">Confirmed Queue</div>
-        <div class="productionQueueTable">
-            ${confirmedRowsHTML}
+        <div class="productionSectionLabel">Today&rsquo;s Production</div>
+        <div class="productionSectionSub">Orders moved here by Apps Script when production begins. Mark each ready when complete.</div>
+        <div class="productionCards" style="margin-bottom: 2rem;">
+            ${todaysProductionHTML}
         </div>
 
-        <div class="productionSectionLabel" style="margin-top: 2rem;">Ready for Pickup</div>
+        <div class="productionSectionLabel">Pending Pickup</div>
+        <div class="productionSectionSub">Made and ready — waiting for customer arrival.</div>
         <div class="pickupQueueTable">
-            ${pickupRowsHTML}
+            ${pendingPickupHTML}
         </div>
 
     `;
@@ -1021,27 +1666,53 @@ function renderProductionPage()
 function initializeProductionActions()
 {
 
-    const advanceBtns = document.querySelectorAll('.btnAdvanceProduction');
+    // ── Today's Production — Mark Ready for Pickup ──
 
-    advanceBtns.forEach(function(btn)
+    document.querySelectorAll('.btnAdvanceProduction').forEach(function(btn)
     {
 
         btn.addEventListener('click', function()
         {
 
-            const id = btn.dataset.id;
-
+            const id         = btn.dataset.id;
             const nextStatus = btn.dataset.next;
-
-            const order = ORDERS.find(function(o) { return o.id === id; });
+            const order      = ORDERS.find(function(o) { return o.id === id; });
 
             if (order)
             {
                 order.status = nextStatus;
 
                 // [SUPABASE HOOK: PATCH orders table status]
+                // [TWILIO HOOK: SMS to customer — order is ready for pickup]
 
-                showToast('success', id + ' → ' + STATUS_LABELS[nextStatus]);
+                showToast('success', id + ' ready for pickup.');
+
+                renderPage('production');
+            }
+
+        });
+
+    });
+
+    // ── Pending Pickup — Complete Pickup ──
+
+    document.querySelectorAll('.btnCompletePickupProduction').forEach(function(btn)
+    {
+
+        btn.addEventListener('click', function()
+        {
+
+            const id    = btn.dataset.id;
+            const order = ORDERS.find(function(o) { return o.id === id; });
+
+            if (order)
+            {
+                order.status = STATUS.COMPLETED;
+
+                // [SUPABASE HOOK: PATCH orders table status]
+                // [REVIEWS HOOK: Trigger post-pickup SMS feedback survey]
+
+                showToast('success', id + ' — pickup completed.');
 
                 renderPage('production');
             }
@@ -1063,6 +1734,11 @@ function renderCustomersPage()
     const tableRows = CUSTOMERS.map(function(customer)
     {
 
+        const phoneTel    = customer.phone ? customer.phone.replace(/\D/g, '') : '';
+        const phoneDisplay = customer.phone
+            ? `<a class="phoneTel" href="tel:${phoneTel}">${customer.phone}</a>`
+            : '—';
+
         return `
             <tr>
                 <td>
@@ -1071,7 +1747,7 @@ function renderCustomersPage()
                         <span class="tdCustomer">${customer.name}</span>
                     </div>
                 </td>
-                <td class="tdMuted">${buildPhoneDisplay(customer.phone)}</td>
+                <td class="tdMuted">${phoneDisplay}</td>
                 <td class="tdMuted">${customer.email}</td>
                 <td style="font-weight: 700; color: var(--clrText);">${customer.lifetimeOrders}</td>
                 <td style="font-weight: 700; color: var(--clrGreen);">${formatCurrency(customer.lifetimeSpend)}</td>
@@ -1086,7 +1762,7 @@ function renderCustomersPage()
         <div class="pageHeader">
 
             <div class="pageHeaderLeft">
-                <div class="pageHeaderTitle">Customer List</div>
+                <div class="pageHeaderTitle">Customers</div>
                 <div class="pageHeaderSub">${CUSTOMERS.length} customers on record</div>
             </div>
 
@@ -1143,13 +1819,15 @@ function renderReviewsPage()
             ? `<button class="btn btnGreen btnSm btnMarkResolved" data-id="${fb.id}">Mark Resolved</button>`
             : '';
 
+        const phoneTel = fb.phone ? fb.phone.replace(/\D/g, '') : '';
+
         return `
             <div class="feedbackCard ${isResolved ? 'isResolved' : 'isOpen'}">
                 <div class="feedbackCardTop">
                     <div>
                         <div class="feedbackCustomer">${fb.customer}</div>
                         <div class="feedbackMeta">
-                            <span class="feedbackPhone">${buildPhoneDisplay(fb.phone)}</span>
+                            ${fb.phone ? `<a class="feedbackPhone phoneTel" href="tel:${phoneTel}">${fb.phone}</a>` : ''}
                             <span>·</span>
                             <span>${formatDate(fb.date)}</span>
                         </div>
@@ -1199,16 +1877,13 @@ function renderReviewsPage()
 function initializeReviewsActions()
 {
 
-    const resolveBtns = document.querySelectorAll('.btnMarkResolved');
-
-    resolveBtns.forEach(function(btn)
+    document.querySelectorAll('.btnMarkResolved').forEach(function(btn)
     {
 
         btn.addEventListener('click', function()
         {
 
             const id = btn.dataset.id;
-
             const fb = REVIEWS_DATA.find(function(r) { return r.id === id; });
 
             if (fb)
@@ -1236,10 +1911,11 @@ function initializeReviewsActions()
 function renderReportsPage()
 {
 
+    // [SUPABASE HOOK: Replace REPORTS_DATA with live aggregate queries on the orders table]
+
     const data = REPORTS_DATA;
 
-    const maxOrderCount = Math.max.apply(null, data.weeklyOrders.map(function(d) { return d.count; }));
-
+    const maxOrderCount    = Math.max.apply(null, data.weeklyOrders.map(function(d) { return d.count; }));
     const maxProductOrders = Math.max.apply(null, data.productPopularity.map(function(d) { return d.orders; }));
 
     const orderBars = data.weeklyOrders.map(function(day)
@@ -1282,7 +1958,6 @@ function renderReportsPage()
 
         </div>
 
-        <!-- Summary KPI Cards -->
         <div class="reportsSumGrid">
 
             <div class="reportsSumCardNew">
@@ -1309,7 +1984,6 @@ function renderReportsPage()
 
         <div class="reportsGrid">
 
-            <!-- Weekly Orders Chart -->
             <div class="reportCard">
                 <div class="reportCardTitle">Weekly Orders — Jun 23 to Jun 30</div>
                 <div class="barChart">
@@ -1317,7 +1991,6 @@ function renderReportsPage()
                 </div>
             </div>
 
-            <!-- Popular Products -->
             <div class="reportCard">
                 <div class="reportCardTitle">Popular Products — All Time</div>
                 <div class="hBarChart" style="margin-top: 0.5rem;">
@@ -1339,8 +2012,7 @@ function renderReportsPage()
 function renderSettingsPage()
 {
 
-    const config = BAKERY_CONFIG;
-
+    const config  = BAKERY_CONFIG;
     const allDays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
     const dayToggles = allDays.map(function(day)
@@ -1356,7 +2028,6 @@ function renderSettingsPage()
     {
 
         const isActive = config.productionDays.includes(day);
-
         const capacity = config.dailyCapacity[day] !== undefined ? config.dailyCapacity[day] : 0;
 
         return `
@@ -1383,7 +2054,7 @@ function renderSettingsPage()
 
             <div class="pageHeaderLeft">
                 <div class="pageHeaderTitle">Settings</div>
-                <div class="pageHeaderSub">Bakery control center &mdash; business, schedule, and social</div>
+                <div class="pageHeaderSub">Business details, schedule, and social links</div>
             </div>
 
         </div>
@@ -1402,25 +2073,25 @@ function renderSettingsPage()
 
                     <div class="formGroup">
                         <label class="formLabel">Business Name</label>
-                        <input class="formInput" type="text" value="${config.businessName}" placeholder="Business name">
+                        <input class="formInput" type="text" id="settBusinessName" value="${config.businessName}" placeholder="Business name">
                     </div>
 
                     <div class="formGroup">
                         <label class="formLabel">Owner Name</label>
-                        <input class="formInput" type="text" value="${config.ownerFullName}" placeholder="Owner name">
+                        <input class="formInput" type="text" id="settOwnerName" value="${config.ownerFullName}" placeholder="Owner name">
                     </div>
 
                     <div class="formGroup">
                         <label class="formLabel">Phone</label>
-                        <input class="formInput" type="tel" value="${config.phone}" placeholder="Phone number">
+                        <input class="formInput" type="tel" id="settPhone" value="${config.phone}" placeholder="Phone number">
                     </div>
 
                     <div class="formGroup">
                         <label class="formLabel">Address</label>
-                        <input class="formInput" type="text" value="${config.address}" placeholder="Business address">
+                        <input class="formInput" type="text" id="settAddress" value="${config.address}" placeholder="Business address">
                     </div>
 
-                    <button class="btn btnPrimary settingsSaveBtn" onclick="showToast('success', 'Business info saved.')">
+                    <button class="btn btnPrimary settingsSaveBtn settSaveBusinessInfo">
                         <i class="fa-solid fa-floppy-disk"></i> Save Changes
                     </button>
 
@@ -1440,7 +2111,7 @@ function renderSettingsPage()
 
                     <div class="formGroup">
                         <label class="formLabel">Active Production Days</label>
-                        <p class="formHint">Select the days you produce and fulfill orders each week.</p>
+                        <p class="formHint">Select the days you produce and fulfill orders each week. Today&rsquo;s Production updates automatically when you change this.</p>
                         <div class="pickupDaysGrid">
                             ${dayToggles}
                         </div>
@@ -1454,7 +2125,7 @@ function renderSettingsPage()
                         </div>
                     </div>
 
-                    <button class="btn btnPrimary settingsSaveBtn" onclick="showToast('success', 'Production schedule saved.')">
+                    <button class="btn btnPrimary settingsSaveBtn settSaveProductionSchedule">
                         <i class="fa-solid fa-floppy-disk"></i> Save Changes
                     </button>
 
@@ -1475,10 +2146,10 @@ function renderSettingsPage()
                     <div class="formGroup">
                         <label class="formLabel">Pickup Instructions</label>
                         <p class="formHint">Shared with customers when their order is confirmed.</p>
-                        <textarea class="formInput formTextarea formTextareaLg" placeholder="Pickup instructions for customers">${config.pickupInstructions}</textarea>
+                        <textarea class="formInput formTextarea formTextareaLg" id="settPickupInstructions" placeholder="Pickup instructions for customers">${config.pickupInstructions}</textarea>
                     </div>
 
-                    <button class="btn btnPrimary settingsSaveBtn" onclick="showToast('success', 'Pickup instructions saved.')">
+                    <button class="btn btnPrimary settingsSaveBtn settSavePickupInstructions">
                         <i class="fa-solid fa-floppy-disk"></i> Save Changes
                     </button>
 
@@ -1498,25 +2169,30 @@ function renderSettingsPage()
 
                     <div class="formGroup">
                         <label class="formLabel">Google Review Link</label>
-                        <input class="formInput" type="url" value="${config.googleReviewLink}" placeholder="Google review URL">
+                        <input class="formInput" type="url" id="settGoogleReview" value="${config.googleReviewLink}" placeholder="Google review URL">
                     </div>
 
                     <div class="formGroup">
                         <label class="formLabel">Facebook</label>
-                        <input class="formInput" type="url" value="${config.social.facebook}" placeholder="Facebook URL">
+                        <input class="formInput" type="url" id="settFacebook" value="${config.social.facebook}" placeholder="Facebook URL">
                     </div>
 
                     <div class="formGroup">
                         <label class="formLabel">TikTok</label>
-                        <input class="formInput" type="url" value="${config.social.tiktok}" placeholder="TikTok URL">
+                        <input class="formInput" type="url" id="settTiktok" value="${config.social.tiktok}" placeholder="TikTok URL">
+                    </div>
+
+                    <div class="formGroup">
+                        <label class="formLabel">Instagram</label>
+                        <input class="formInput" type="url" id="settInstagram" value="${config.social.instagram}" placeholder="Instagram URL">
                     </div>
 
                     <div class="formGroup">
                         <label class="formLabel">Website</label>
-                        <input class="formInput" type="url" value="${config.website}" placeholder="https://yourwebsite.com">
+                        <input class="formInput" type="url" id="settWebsite" value="${config.website}" placeholder="https://yourwebsite.com">
                     </div>
 
-                    <button class="btn btnPrimary settingsSaveBtn" onclick="showToast('success', 'Social links saved.')">
+                    <button class="btn btnPrimary settingsSaveBtn settSaveSocialLinks">
                         <i class="fa-solid fa-floppy-disk"></i> Save Changes
                     </button>
 
@@ -1530,12 +2206,98 @@ function renderSettingsPage()
 
 }
 
+function saveBusinessInfo()
+{
+
+    const nameInput  = document.getElementById('settBusinessName');
+    const ownerInput = document.getElementById('settOwnerName');
+    const phoneInput = document.getElementById('settPhone');
+    const addrInput  = document.getElementById('settAddress');
+
+    if (nameInput)  { BAKERY_CONFIG.businessName   = nameInput.value.trim(); }
+    if (phoneInput) { BAKERY_CONFIG.phone           = phoneInput.value.trim(); }
+    if (addrInput)  { BAKERY_CONFIG.address         = addrInput.value.trim(); }
+
+    if (ownerInput)
+    {
+        BAKERY_CONFIG.ownerFullName = ownerInput.value.trim();
+        BAKERY_CONFIG.ownerName     = ownerInput.value.trim().split(' ')[0];
+    }
+
+    // [SUPABASE HOOK: PATCH clients table — businessName, ownerFullName, phone, address]
+
+    showToast('success', 'Business information saved.');
+
+}
+
+function saveProductionSchedule()
+{
+
+    const activeDays = [];
+
+    document.querySelectorAll('.dayToggle.isActive').forEach(function(toggle)
+    {
+        activeDays.push(toggle.dataset.day);
+    });
+
+    BAKERY_CONFIG.productionDays = activeDays;
+    BAKERY_CONFIG.pickupDays     = activeDays.slice();
+
+    document.querySelectorAll('.capacityInput').forEach(function(input)
+    {
+        const day = input.dataset.day;
+        BAKERY_CONFIG.dailyCapacity[day] = parseInt(input.value, 10) || 0;
+    });
+
+    // [SUPABASE HOOK: PATCH clients table — productionDays, pickupDays, dailyCapacity]
+
+    showToast('success', 'Production schedule saved. Today\'s Production updates automatically.');
+
+}
+
+function savePickupInstructions()
+{
+
+    const input = document.getElementById('settPickupInstructions');
+
+    if (input)
+    {
+        BAKERY_CONFIG.pickupInstructions = input.value.trim();
+    }
+
+    // [SUPABASE HOOK: PATCH clients table — pickupInstructions]
+
+    showToast('success', 'Pickup instructions saved.');
+
+}
+
+function saveSocialLinks()
+{
+
+    const googleInput    = document.getElementById('settGoogleReview');
+    const facebookInput  = document.getElementById('settFacebook');
+    const tiktokInput    = document.getElementById('settTiktok');
+    const instagramInput = document.getElementById('settInstagram');
+    const websiteInput   = document.getElementById('settWebsite');
+
+    if (googleInput)    { BAKERY_CONFIG.googleReviewLink = googleInput.value.trim(); }
+    if (facebookInput)  { BAKERY_CONFIG.social.facebook  = facebookInput.value.trim(); }
+    if (tiktokInput)    { BAKERY_CONFIG.social.tiktok    = tiktokInput.value.trim(); }
+    if (instagramInput) { BAKERY_CONFIG.social.instagram = instagramInput.value.trim(); }
+    if (websiteInput)   { BAKERY_CONFIG.website          = websiteInput.value.trim(); }
+
+    // [SUPABASE HOOK: PATCH clients table — social, googleReviewLink, website]
+
+    showToast('success', 'Social links saved.');
+
+}
+
 function initializeSettingsInteractions()
 {
 
-    const dayToggles = document.querySelectorAll('.dayToggle');
+    // ── Day Toggles ──
 
-    dayToggles.forEach(function(toggle)
+    document.querySelectorAll('.dayToggle').forEach(function(toggle)
     {
 
         toggle.addEventListener('click', function()
@@ -1543,12 +2305,10 @@ function initializeSettingsInteractions()
 
             toggle.classList.toggle('isActive');
 
-            const day = toggle.dataset.day;
-
+            const day         = toggle.dataset.day;
             const isNowActive = toggle.classList.contains('isActive');
 
-            const capacityRow = document.querySelector('.capacityRow[data-day="' + day + '"]');
-
+            const capacityRow   = document.querySelector('.capacityRow[data-day="' + day + '"]');
             const capacityInput = document.querySelector('.capacityInput[data-day="' + day + '"]');
 
             if (capacityRow)
@@ -1558,19 +2318,31 @@ function initializeSettingsInteractions()
 
             if (capacityInput)
             {
-
                 capacityInput.disabled = !isNowActive;
 
                 if (!isNowActive)
                 {
                     capacityInput.value = 0;
                 }
-
             }
 
         });
 
     });
+
+    // ── Save Buttons ──
+
+    const saveBusinessInfoBtn = document.querySelector('.settSaveBusinessInfo');
+    if (saveBusinessInfoBtn) { saveBusinessInfoBtn.addEventListener('click', saveBusinessInfo); }
+
+    const saveScheduleBtn = document.querySelector('.settSaveProductionSchedule');
+    if (saveScheduleBtn) { saveScheduleBtn.addEventListener('click', saveProductionSchedule); }
+
+    const savePickupBtn = document.querySelector('.settSavePickupInstructions');
+    if (savePickupBtn) { savePickupBtn.addEventListener('click', savePickupInstructions); }
+
+    const saveSocialBtn = document.querySelector('.settSaveSocialLinks');
+    if (saveSocialBtn) { saveSocialBtn.addEventListener('click', saveSocialLinks); }
 
 }
 
@@ -1585,7 +2357,7 @@ function renderHelpPage()
     const faqItems =
     [
         'How do I confirm an order request?',
-        'How do I mark an order as Ready for pickup?',
+        'How do I mark an order as Ready for Pickup?',
         'How do I change my production days?',
         'How do I update my daily order capacity?',
         'How do I log customer feedback?',
@@ -1594,14 +2366,11 @@ function renderHelpPage()
 
     const faqHTML = faqItems.map(function(question)
     {
-
         return `
             <div class="helpFaqItem">
                 <span class="helpFaqQ">${question}</span>
-                <i class="fa-solid fa-chevron-right helpFaqIcon"></i>
             </div>
         `;
-
     }).join('');
 
     return `
@@ -1609,7 +2378,7 @@ function renderHelpPage()
         <div class="pageHeader">
 
             <div class="pageHeaderLeft">
-                <div class="pageHeaderTitle">Help & Support</div>
+                <div class="pageHeaderTitle">Help &amp; Support</div>
                 <div class="pageHeaderSub">NuloEdge Bakery Module documentation</div>
             </div>
 
@@ -1663,17 +2432,7 @@ function renderHelpPage()
 function initializeHelpAccordion()
 {
 
-    const faqItems = document.querySelectorAll('.helpFaqItem');
-
-    faqItems.forEach(function(item)
-    {
-
-        item.addEventListener('click', function()
-        {
-            showToast('info', 'Full documentation coming in NuloOS v1.1');
-        });
-
-    });
+    // FAQ items are informational — full documentation available in NuloOS v1.1
 
 }
 
@@ -1698,19 +2457,11 @@ function toggleTheme()
         document.documentElement.removeAttribute('data-theme');
     }
 
-    const label = document.getElementById('themeToggleLabel');
-
+    const label    = document.getElementById('themeToggleLabel');
     const switchEl = document.getElementById('themeToggleSwitch');
 
-    if (label)
-    {
-        label.textContent = isLightTheme ? 'Dark Mode' : 'Light Mode';
-    }
-
-    if (switchEl)
-    {
-        switchEl.classList.toggle('isActive', isLightTheme);
-    }
+    if (label)    { label.textContent = isLightTheme ? 'Dark Mode' : 'Light Mode'; }
+    if (switchEl) { switchEl.classList.toggle('isActive', isLightTheme); }
 
 }
 
@@ -1728,11 +2479,8 @@ function showToast(type, message)
     {
 
         container = document.createElement('div');
-
-        container.id = 'toastContainer';
-
+        container.id        = 'toastContainer';
         container.className = 'toastContainer';
-
         document.body.appendChild(container);
 
     }
@@ -1758,16 +2506,11 @@ function showToast(type, message)
     setTimeout(function()
     {
 
-        toast.style.opacity = '0';
-
-        toast.style.transform = 'translateX(20px)';
-
+        toast.style.opacity    = '0';
+        toast.style.transform  = 'translateX(20px)';
         toast.style.transition = 'all 0.25s ease';
 
-        setTimeout(function()
-        {
-            toast.remove();
-        }, 300);
+        setTimeout(function() { toast.remove(); }, 300);
 
     }, 3200);
 
@@ -1782,18 +2525,10 @@ function openMobileMenu()
 {
 
     const sidebar = document.getElementById('sidebar');
-
     const overlay = document.getElementById('mobileOverlay');
 
-    if (sidebar)
-    {
-        sidebar.classList.add('isOpen');
-    }
-
-    if (overlay)
-    {
-        overlay.classList.add('isVisible');
-    }
+    if (sidebar) { sidebar.classList.add('isOpen'); }
+    if (overlay) { overlay.classList.add('isVisible'); }
 
 }
 
@@ -1801,18 +2536,10 @@ function closeMobileMenu()
 {
 
     const sidebar = document.getElementById('sidebar');
-
     const overlay = document.getElementById('mobileOverlay');
 
-    if (sidebar)
-    {
-        sidebar.classList.remove('isOpen');
-    }
-
-    if (overlay)
-    {
-        overlay.classList.remove('isVisible');
-    }
+    if (sidebar) { sidebar.classList.remove('isOpen'); }
+    if (overlay) { overlay.classList.remove('isVisible'); }
 
 }
 
@@ -1824,7 +2551,7 @@ function closeMobileMenu()
 document.addEventListener('DOMContentLoaded', function()
 {
 
-    // Navigation clicks
+    // ── Sidebar Navigation ──
 
     const sidebarNav = document.getElementById('sidebarNav');
 
@@ -1852,7 +2579,7 @@ document.addEventListener('DOMContentLoaded', function()
 
     }
 
-    // Sidebar: New Order Request CTA
+    // ── Sidebar New Order CTA ──
 
     const sidebarNewOrderBtn = document.getElementById('sidebarNewOrderBtn');
 
@@ -1861,7 +2588,7 @@ document.addEventListener('DOMContentLoaded', function()
         sidebarNewOrderBtn.addEventListener('click', showNewOrderRequestModal);
     }
 
-    // Hamburger menu
+    // ── Mobile Hamburger ──
 
     const hamburgerBtn = document.getElementById('hamburgerBtn');
 
@@ -1870,7 +2597,7 @@ document.addEventListener('DOMContentLoaded', function()
         hamburgerBtn.addEventListener('click', openMobileMenu);
     }
 
-    // Overlay close
+    // ── Mobile Overlay ──
 
     const mobileOverlay = document.getElementById('mobileOverlay');
 
@@ -1879,25 +2606,13 @@ document.addEventListener('DOMContentLoaded', function()
         mobileOverlay.addEventListener('click', closeMobileMenu);
     }
 
-    // Theme toggle
+    // ── Theme Toggle ──
 
     const themeToggleBtn = document.getElementById('themeToggleBtn');
 
     if (themeToggleBtn)
     {
         themeToggleBtn.addEventListener('click', toggleTheme);
-    }
-
-    // Logout button
-
-    const logoutBtn = document.getElementById('logoutBtn');
-
-    if (logoutBtn)
-    {
-        logoutBtn.addEventListener('click', function()
-        {
-            showToast('info', 'Auth not required in demo mode.');
-        });
     }
 
 });
@@ -1910,17 +2625,18 @@ document.addEventListener('DOMContentLoaded', function()
 document.addEventListener('DOMContentLoaded', function()
 {
 
-    // Update nav badge for new requests
-
+    // Nav badge: new requests count
     const navBadge = document.getElementById('navBadgeRequests');
 
     if (navBadge)
     {
-        navBadge.textContent = countNewRequests();
+        navBadge.textContent = ORDERS.filter(function(o)
+        {
+            return o.status === STATUS.NEW_REQUEST;
+        }).length;
     }
 
-    // Populate top bar date
-
+    // Top bar date
     const topBarDate = document.getElementById('topBarDate');
 
     if (topBarDate)
@@ -1931,15 +2647,14 @@ document.addEventListener('DOMContentLoaded', function()
         topBarDate.textContent = today.toLocaleDateString('en-US',
         {
             weekday: 'long',
-            month: 'long',
-            day: 'numeric',
-            year: 'numeric'
+            month:   'long',
+            day:     'numeric',
+            year:    'numeric'
         });
 
     }
 
     // Render initial page
-
     renderPage('dashboard');
 
 });

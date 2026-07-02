@@ -1,0 +1,22 @@
+{
+  "name": "740Eatz",
+  "short_name": "740Eatz",
+  "description": "Custom fruit platters, chocolate covered strawberries, cheesecake stuffed strawberries, candied fruit, and specialty treats.",
+  "icons": [
+    {
+      "src": "web-app-manifest-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "web-app-manifest-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "theme_color": "#ff149d",
+  "background_color": "#000000",
+  "display": "standalone"
+}

@@ -382,9 +382,54 @@ img
 
     height: 24px;
 
-    width: auto;
+    width: 24px;
 
     object-fit: contain;
+
+}
+
+/* ── Collaborative Logo ── */
+
+.sidebarCoLogo
+{
+
+    display: flex;
+
+    align-items: center;
+
+    gap: 0.45rem;
+
+}
+
+.sidebarCoLogoIcon
+{
+
+    width: 28px;
+
+    height: 28px;
+
+    object-fit: contain;
+
+    flex-shrink: 0;
+
+    border-radius: 5px;
+
+}
+
+.sidebarCoLogoDivider
+{
+
+    font-size: 0.7rem;
+
+    font-weight: 700;
+
+    color: var(--clrTextMuted);
+
+    flex-shrink: 0;
+
+    line-height: 1;
+
+    user-select: none;
 
 }
 
@@ -2733,6 +2778,23 @@ img
 
 }
 
+.productionCardNotes
+{
+
+    font-size: 0.74rem;
+
+    color: var(--clrAmber);
+
+    background: var(--clrAmberBg);
+
+    border-radius: var(--radiusSm);
+
+    padding: 0.3rem 0.5rem;
+
+    margin-bottom: 0.6rem;
+
+}
+
 .productionCardFooter
 {
 
@@ -4430,6 +4492,13 @@ img
 
     }
 
+    .sidebarCoLogo
+    {
+
+        display: none;
+
+    }
+
     .sidebarLogoMark
     {
 
@@ -5156,5 +5225,618 @@ img
         grid-template-columns: repeat(2, 1fr);
 
     }
+
+}
+
+
+/* ============================================================
+   ORDER DETAIL DRAWER
+============================================================ */
+
+.drawerOverlay
+{
+
+    position: fixed;
+
+    inset: 0;
+
+    background: rgba(0, 0, 0, 0.5);
+
+    z-index: 250;
+
+    opacity: 0;
+
+    transition: opacity var(--transitionMed);
+
+    backdrop-filter: blur(2px);
+
+}
+
+.drawerOverlay.isVisible
+{
+
+    opacity: 1;
+
+}
+
+.orderDrawer
+{
+
+    position: fixed;
+
+    top: 0;
+
+    right: 0;
+
+    width: 400px;
+
+    height: 100vh;
+
+    background: var(--clrCard);
+
+    border-left: 1px solid var(--clrBorderLight);
+
+    z-index: 251;
+
+    display: flex;
+
+    flex-direction: column;
+
+    transform: translateX(100%);
+
+    transition: transform var(--transitionMed);
+
+    box-shadow: -8px 0 40px rgba(0, 0, 0, 0.55);
+
+}
+
+.orderDrawer.isOpen
+{
+
+    transform: translateX(0);
+
+}
+
+.drawerHeader
+{
+
+    padding: 1.5rem 1.25rem 1.1rem;
+
+    border-bottom: 1px solid var(--clrBorder);
+
+    display: flex;
+
+    align-items: flex-start;
+
+    justify-content: space-between;
+
+    gap: 1rem;
+
+    flex-shrink: 0;
+
+}
+
+.drawerTitle
+{
+
+    font-size: 0.95rem;
+
+    font-weight: 800;
+
+    color: var(--clrText);
+
+    letter-spacing: -0.01em;
+
+    font-family: 'Courier New', monospace;
+
+    margin-bottom: 0.4rem;
+
+}
+
+.drawerCloseBtn
+{
+
+    width: 30px;
+
+    height: 30px;
+
+    border-radius: var(--radiusSm);
+
+    background: var(--clrSurface);
+
+    border: 1px solid var(--clrBorder);
+
+    color: var(--clrTextSub);
+
+    font-size: 1rem;
+
+    display: flex;
+
+    align-items: center;
+
+    justify-content: center;
+
+    cursor: pointer;
+
+    flex-shrink: 0;
+
+    transition: var(--transBase);
+
+}
+
+.drawerCloseBtn:hover
+{
+
+    background: var(--clrCard);
+
+    color: var(--clrText);
+
+    border-color: var(--clrBorderLight);
+
+}
+
+.drawerBody
+{
+
+    flex: 1;
+
+    overflow-y: auto;
+
+}
+
+.drawerSection
+{
+
+    padding: 1rem 1.25rem;
+
+    border-bottom: 1px solid var(--clrBorder);
+
+}
+
+.drawerSection:last-child
+{
+
+    border-bottom: none;
+
+}
+
+.drawerLabel
+{
+
+    font-size: 0.68rem;
+
+    font-weight: 700;
+
+    text-transform: uppercase;
+
+    letter-spacing: 0.07em;
+
+    color: var(--clrTextMuted);
+
+    margin-bottom: 0.4rem;
+
+}
+
+.drawerValue
+{
+
+    font-size: 0.88rem;
+
+    font-weight: 500;
+
+    color: var(--clrText);
+
+    line-height: 1.5;
+
+}
+
+.drawerNotes
+{
+
+    background: var(--clrSurface);
+
+    border: 1px solid var(--clrBorder);
+
+    border-radius: var(--radiusSm);
+
+    padding: 0.65rem 0.85rem;
+
+    font-size: 0.82rem;
+
+    color: var(--clrTextSub);
+
+    line-height: 1.55;
+
+    margin-top: 0.15rem;
+
+}
+
+.drawerPhoneLink
+{
+
+    font-size: 0.88rem;
+
+    color: var(--clrBlue);
+
+    font-weight: 500;
+
+    margin-top: 0.3rem;
+
+    display: block;
+
+}
+
+.drawerPaymentRow
+{
+
+    display: flex;
+
+    align-items: center;
+
+    gap: 0.75rem;
+
+    margin-top: 0.15rem;
+
+}
+
+.drawerActions
+{
+
+    display: flex;
+
+    flex-wrap: wrap;
+
+    gap: 0.6rem;
+
+    margin-top: 0.15rem;
+
+}
+
+.drawerAwaitingNote
+{
+
+    font-size: 0.82rem;
+
+    color: var(--clrTextMuted);
+
+}
+
+.drawerMetaSection
+{
+
+    background: var(--clrSurface);
+
+}
+
+
+/* ── Status Timeline ── */
+
+.drawerTimeline
+{
+
+    display: flex;
+
+    flex-direction: column;
+
+    margin-top: 0.25rem;
+
+}
+
+.timelineStep
+{
+
+    display: flex;
+
+    align-items: center;
+
+    gap: 0.75rem;
+
+    padding: 0.4rem 0;
+
+}
+
+.timelineStepDot
+{
+
+    width: 10px;
+
+    height: 10px;
+
+    border-radius: 50%;
+
+    flex-shrink: 0;
+
+}
+
+.timelineStepLabel
+{
+
+    font-size: 0.8rem;
+
+    font-weight: 500;
+
+}
+
+.timelineStepDone .timelineStepDot
+{
+
+    background: var(--clrGreen);
+
+}
+
+.timelineStepDone .timelineStepLabel
+{
+
+    color: var(--clrTextMuted);
+
+}
+
+.timelineStepCurrent .timelineStepDot
+{
+
+    background: var(--clrPurpleLight);
+
+    box-shadow: 0 0 8px var(--clrPurpleLight);
+
+}
+
+.timelineStepCurrent .timelineStepLabel
+{
+
+    color: var(--clrText);
+
+    font-weight: 700;
+
+}
+
+.timelineStepPending .timelineStepDot
+{
+
+    background: var(--clrBorderLight);
+
+}
+
+.timelineStepPending .timelineStepLabel
+{
+
+    color: var(--clrTextDim);
+
+}
+
+
+/* ── Order Phone Sub-line in Table ── */
+
+.orderPhone
+{
+
+    font-size: 0.74rem;
+
+    color: var(--clrBlue);
+
+    font-weight: 500;
+
+    display: block;
+
+    margin-top: 0.15rem;
+
+}
+
+
+/* ============================================================
+   DRAWER — MOBILE
+============================================================ */
+
+@media (max-width: 768px)
+{
+
+    .orderDrawer
+    {
+
+        width: 100%;
+
+        border-left: none;
+
+        border-top: 1px solid var(--clrBorderLight);
+
+        top: auto;
+
+        bottom: 0;
+
+        height: 85vh;
+
+        transform: translateY(100%);
+
+    }
+
+    .orderDrawer.isOpen
+    {
+
+        transform: translateY(0);
+
+    }
+
+}
+
+
+/* ============================================================
+   HELP PAGE — NON-INTERACTIVE FAQ
+============================================================ */
+
+.helpFaqItem
+{
+
+    cursor: default;
+
+}
+
+
+/* ============================================================
+   WORKFLOW STATUS BADGES
+   Permanent workflow color system — NuloOS Bakery Module
+
+   Status values (internal contract):
+   NEW_REQUEST | AWAITING_PAYMENT | CONFIRMED |
+   IN_PRODUCTION | PENDING_PICKUP | COMPLETED | CANCELLED
+
+   These colors are the permanent design language.
+   Do not reassign colors to different workflow stages.
+============================================================ */
+
+/* ── NEW_REQUEST — Purple ── */
+
+.statusNewRequest
+{
+
+    background: var(--clrPurpleGlow);
+
+    color: var(--clrPurpleLight);
+
+    border: 1px solid rgba(168, 85, 247, 0.25);
+
+}
+
+/* ── AWAITING_PAYMENT — Red ── */
+
+.statusAwaitingPayment
+{
+
+    background: var(--clrRedBg);
+
+    color: var(--clrRed);
+
+    border: 1px solid var(--clrRedBorder);
+
+}
+
+/* ── CONFIRMED — Blue ── */
+
+.statusConfirmed
+{
+
+    background: var(--clrBlueBg);
+
+    color: var(--clrBlue);
+
+    border: 1px solid var(--clrBlueBorder);
+
+}
+
+/* ── IN_PRODUCTION — Amber ── */
+
+.statusInProduction
+{
+
+    background: var(--clrAmberBg);
+
+    color: var(--clrAmber);
+
+    border: 1px solid var(--clrAmberBorder);
+
+}
+
+/* ── PENDING_PICKUP — Green ── */
+
+.statusPendingPickup
+{
+
+    background: var(--clrGreenBg);
+
+    color: var(--clrGreen);
+
+    border: 1px solid var(--clrGreenBorder);
+
+}
+
+/* ── COMPLETED — Gray ── */
+
+.statusCompleted
+{
+
+    background: var(--clrGrayBg);
+
+    color: var(--clrGray);
+
+    border: 1px solid var(--clrGrayBorder);
+
+}
+
+/* ── CANCELLED — Gray Muted ── */
+
+.statusCancelled
+{
+
+    background: rgba(71, 85, 105, 0.08);
+
+    color: var(--clrTextMuted);
+
+    border: 1px solid rgba(71, 85, 105, 0.15);
+
+}
+
+
+/* ============================================================
+   KPI ICON COLOR EXTENSIONS
+============================================================ */
+
+.kpiIcon.iconRed
+{
+
+    background: var(--clrRedBg);
+
+    color: var(--clrRed);
+
+}
+
+
+/* ============================================================
+   PRODUCTION PAGE ADDITIONS
+============================================================ */
+
+/* ── Section Sub-heading ── */
+
+.productionSectionSub
+{
+
+    font-size: 0.78rem;
+
+    color: var(--clrTextMuted);
+
+    margin-top: -0.35rem;
+
+    margin-bottom: 0.75rem;
+
+}
+
+/* ── Section Date Qualifier (inline with label) ── */
+
+.productionSectionDate
+{
+
+    font-size: 0.7rem;
+
+    font-weight: 500;
+
+    color: var(--clrTextSub);
+
+    text-transform: none;
+
+    letter-spacing: 0;
+
+    margin-left: 0.5rem;
+
+}
+
+/* ── Confirmed Queue: scheduled day note ── */
+
+.pqrNote
+{
+
+    font-size: 0.72rem;
+
+    color: var(--clrTextMuted);
+
+    flex-shrink: 0;
+
+    text-align: right;
 
 }

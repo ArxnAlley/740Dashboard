@@ -15,10 +15,12 @@
          FAVICON & BROWSER ICONS
     ============================================================ -->
 
-    <link rel="icon" type="image/png" href="nuloEventsFavicon.png">
-    <link rel="shortcut icon" href="nuloEventsFavicon.png">
-    <link rel="apple-touch-icon" href="nuloEventsFavicon.png">
-    <meta name="msapplication-TileImage" content="nuloEventsFavicon.png">
+    <link rel="icon" href="graphics/favicons/favicon.ico" sizes="any">
+    <link rel="icon" href="graphics/favicons/favicon.svg" type="image/svg+xml">
+    <link rel="icon" type="image/png" sizes="96x96" href="graphics/favicons/favicon-96x96.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="graphics/favicons/apple-touch-icon.png">
+    <link rel="manifest" href="graphics/favicons/site.webmanifest">
+    <meta name="msapplication-TileImage" content="graphics/favicons/favicon-96x96.png">
     <meta name="msapplication-TileColor" content="#0A0A0A">
     <meta name="theme-color" content="#0A0A0A">
 
@@ -192,8 +194,17 @@
             <!-- ── 1. Logo ── -->
 
             <div class="sidebarLogoArea">
-                <img src="graphics/logos/TPNuloEdge_Logo .png" alt="NuloEdge" class="sidebarLogoFull">
-                <img src="nuloEventsFavicon.png" alt="NuloEdge" class="sidebarLogoMark">
+
+                <!-- Expanded: collaborative logo -->
+                <div class="sidebarCoLogo">
+                    <img src="graphics/favicons/TPNuloFavicon.png" alt="NuloEdge" class="sidebarCoLogoIcon">
+                    <span class="sidebarCoLogoDivider">&times;</span>
+                    <img src="graphics/favicons/nuloEventsFavicon.png" alt="740Eatz" class="sidebarCoLogoIcon">
+                </div>
+
+                <!-- Collapsed: single mark -->
+                <img src="graphics/favicons/nuloEventsFavicon.png" alt="740Eatz" class="sidebarLogoMark">
+
             </div>
 
             <!-- ── 2. Profile ── -->
@@ -244,9 +255,9 @@
                     <span class="navItemText">Production</span>
                 </button>
 
-                <button class="navItem" data-page="customers" aria-label="Customer List">
+                <button class="navItem" data-page="customers" aria-label="Customers">
                     <svg class="navIcon"><use href="#iconCustomers"></use></svg>
-                    <span class="navItemText">Customer List</span>
+                    <span class="navItemText">Customers</span>
                 </button>
 
                 <button class="navItem" data-page="reviews" aria-label="Reviews">
@@ -293,7 +304,7 @@
                 <div class="sidebarDivider" role="separator" aria-hidden="true"></div>
 
                 <div class="sidebarBottomBrand">
-                    <img src="nuloEventsFavicon.png" alt="NuloEdge" class="sidebarBottomLogo">
+                    <img src="graphics/favicons/nuloEventsFavicon.png" alt="NuloEdge" class="sidebarBottomLogo">
                     <div class="sidebarPoweredBy">
                         <p class="sidebarPoweredByText">Powered by NuloOS</p>
                         <p class="sidebarVersion">v1.0.0</p>
@@ -322,7 +333,6 @@
 
                     <button class="topBarIconBtn" aria-label="Notifications">
                         <svg class="icon"><use href="#iconBell"></use></svg>
-                        <span class="notifDot"></span>
                     </button>
 
                 </div>
