@@ -342,6 +342,7 @@ function renderPage(page, opts)
     if (renderer)
     {
         contentArea.innerHTML = renderer(opts);
+        if (page === 'settings') { console.log("✅ Settings page rendered."); }
         afterRender(page, opts);
     }
 
@@ -2206,7 +2207,7 @@ function renderSettingsPage()
 
 }
 
-function saveBusinessInfo()
+async function saveBusinessInfo()
 {
 
     const nameInput  = document.getElementById('settBusinessName');
@@ -2224,13 +2225,34 @@ function saveBusinessInfo()
         BAKERY_CONFIG.ownerName     = ownerInput.value.trim().split(' ')[0];
     }
 
-    // [SUPABASE HOOK: PATCH clients table — businessName, ownerFullName, phone, address]
+    const payload =
+    {
+        businessName:  BAKERY_CONFIG.businessName,
+        ownerFullName: BAKERY_CONFIG.ownerFullName,
+        phone:         BAKERY_CONFIG.phone,
+        address:       BAKERY_CONFIG.address
+    };
 
-    showToast('success', 'Business information saved.');
+    const btn = document.querySelector('.settSaveBusinessInfo');
+    setButtonLoading(btn, true);
+
+    try
+    {
+        await updateSettings(payload);
+        showToast('success', 'Business information saved.');
+    }
+    catch (err)
+    {
+        showToast('warning', 'Could not save business information. Please try again.');
+    }
+    finally
+    {
+        setButtonLoading(btn, false);
+    }
 
 }
 
-function saveProductionSchedule()
+async function saveProductionSchedule()
 {
 
     const activeDays = [];
@@ -2249,9 +2271,29 @@ function saveProductionSchedule()
         BAKERY_CONFIG.dailyCapacity[day] = parseInt(input.value, 10) || 0;
     });
 
-    // [SUPABASE HOOK: PATCH clients table — productionDays, pickupDays, dailyCapacity]
+    const payload =
+    {
+        productionDays: BAKERY_CONFIG.productionDays,
+        pickupDays:     BAKERY_CONFIG.pickupDays,
+        dailyCapacity:  BAKERY_CONFIG.dailyCapacity
+    };
 
-    showToast('success', 'Production schedule saved. Today\'s Production updates automatically.');
+    const btn = document.querySelector('.settSaveProductionSchedule');
+    setButtonLoading(btn, true);
+
+    try
+    {
+        await updateSettings(payload);
+        showToast('success', 'Production schedule saved. Today\'s Production updates automatically.');
+    }
+    catch (err)
+    {
+        showToast('warning', 'Could not save production schedule. Please try again.');
+    }
+    finally
+    {
+        setButtonLoading(btn, false);
+    }
 
 }
 
@@ -2271,7 +2313,7 @@ function savePickupInstructions()
 
 }
 
-function saveSocialLinks()
+async function saveSocialLinks()
 {
 
     const googleInput    = document.getElementById('settGoogleReview');
@@ -2286,14 +2328,40 @@ function saveSocialLinks()
     if (instagramInput) { BAKERY_CONFIG.social.instagram = instagramInput.value.trim(); }
     if (websiteInput)   { BAKERY_CONFIG.website          = websiteInput.value.trim(); }
 
-    // [SUPABASE HOOK: PATCH clients table — social, googleReviewLink, website]
+    // API keys use "Url" suffix; BAKERY_CONFIG uses different names.
+    // Mapping applied here at the API boundary.
+    const payload =
+    {
+        googleReviewUrl: BAKERY_CONFIG.googleReviewLink,
+        facebookUrl:     BAKERY_CONFIG.social.facebook,
+        tiktokUrl:       BAKERY_CONFIG.social.tiktok,
+        instagramUrl:    BAKERY_CONFIG.social.instagram,
+        websiteUrl:      BAKERY_CONFIG.website
+    };
 
-    showToast('success', 'Social links saved.');
+    const btn = document.querySelector('.settSaveSocialLinks');
+    setButtonLoading(btn, true);
+
+    try
+    {
+        await updateSettings(payload);
+        showToast('success', 'Social links saved.');
+    }
+    catch (err)
+    {
+        showToast('warning', 'Could not save social links. Please try again.');
+    }
+    finally
+    {
+        setButtonLoading(btn, false);
+    }
 
 }
 
 function initializeSettingsInteractions()
 {
+
+    console.log("✅ initializeSettingsInteractions()");
 
     // ── Day Toggles ──
 
@@ -2343,6 +2411,10 @@ function initializeSettingsInteractions()
 
     const saveSocialBtn = document.querySelector('.settSaveSocialLinks');
     if (saveSocialBtn) { saveSocialBtn.addEventListener('click', saveSocialLinks); }
+
+    // Load live settings from API and populate form fields
+    console.log("➡️ Calling loadSettingsFromAPI()");
+    loadSettingsFromAPI();
 
 }
 

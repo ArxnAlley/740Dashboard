@@ -335,6 +335,8 @@ img
 
     overflow: hidden;
 
+    border-right: 1px solid var(--sbBorderColor);
+
     transition: transform var(--transitionMed);
 
 }
@@ -1196,7 +1198,7 @@ img
 
     display: grid;
 
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(5, 1fr);
 
     gap: 1rem;
 
@@ -4735,6 +4737,39 @@ img
     {
 
         flex-wrap: wrap;
+
+    }
+
+    /* ── Sidebar logo row aligns with mobile top bar ── */
+
+    .sidebarLogoArea
+    {
+
+        height: var(--mobileTopBarHeight);
+
+    }
+
+    /* ── Production / pickup queues: horizontal scroll at phone widths ── */
+
+    .productionQueueTable,
+    .pickupQueueTable
+    {
+
+        overflow-x: auto;
+
+    }
+
+    .productionQueueRow
+    {
+
+        min-width: 480px;
+
+    }
+
+    .pickupQueueRow
+    {
+
+        min-width: 440px;
 
     }
 
