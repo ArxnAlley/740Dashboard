@@ -198,6 +198,50 @@ function populateSettingsForm(settings)
         });
     }
 
+    /* ── Order Availability ── */
+
+    if (settings.orderAvailability !== undefined && settings.orderAvailability !== null)
+    {
+        BAKERY_CONFIG.orderAvailability = settings.orderAvailability;
+
+        document.querySelectorAll('.availabilityOption').forEach(function(btn)
+        {
+            btn.classList.toggle('isActive', btn.dataset.value === settings.orderAvailability);
+        });
+    }
+
+    /* ── Pickup Configuration ── */
+
+    if (settings.pickupConfiguration !== undefined && settings.pickupConfiguration !== null)
+    {
+        BAKERY_CONFIG.pickupConfiguration = settings.pickupConfiguration;
+
+        const messageEl = document.getElementById('pickupConfigMessage');
+        if (messageEl) { messageEl.value = settings.pickupConfiguration.message || ''; }
+
+        const windowList = document.getElementById('pickupWindowList');
+        if (windowList)
+        {
+            const windows = Array.isArray(settings.pickupConfiguration.windows)
+                ? settings.pickupConfiguration.windows
+                : [];
+
+            if (windows.length > 0)
+            {
+                windowList.innerHTML = windows.map(function(win, i)
+                {
+                    return renderPickupWindowHTML(win, i);
+                }).join('');
+            }
+            else
+            {
+                windowList.innerHTML = renderPickupWindowHTML(null, 0);
+            }
+
+            initializePickupWindowInteractions(windowList);
+        }
+    }
+
     /* ── Social & Website ── */
 
     if (settings.googleReviewUrl !== undefined && settings.googleReviewUrl !== null)

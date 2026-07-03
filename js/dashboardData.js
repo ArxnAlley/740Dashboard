@@ -74,6 +74,14 @@ const BAKERY_CONFIG =
 
     pickupInstructions: 'Orders are available for pickup at the address on file. Please bring your order confirmation number. Contact us if you need to reschedule.',
 
+    orderAvailability: 'accepting',
+
+    pickupConfiguration:
+    {
+        message: '',
+        windows: []
+    },
+
     googleReviewLink: '', // [REVIEWS HOOK: populate from client config]
 
     social:

@@ -2009,6 +2009,157 @@ function renderReportsPage()
    SETTINGS PAGE
 ============================================================ */
 
+
+/* ── Time Conversion Helpers ── */
+
+/*
+    Converts a 12-hour time string ("11:00 AM", "6:00 PM") to the
+    24-hour "HH:MM" format required by <input type="time">.
+    If the value is already in 24-hour format (no AM/PM), returns as-is.
+*/
+function to24Hour(timeStr)
+{
+
+    if (!timeStr || !/AM|PM/i.test(timeStr)) { return timeStr || ''; }
+
+    var parts     = timeStr.trim().split(' ');
+    var period    = parts[1].toUpperCase();
+    var timeParts = parts[0].split(':');
+    var hours     = parseInt(timeParts[0], 10);
+    var minutes   = timeParts[1] || '00';
+
+    if (period === 'AM' && hours === 12) { hours = 0; }
+    if (period === 'PM' && hours !== 12) { hours += 12; }
+
+    return (hours < 10 ? '0' : '') + hours + ':' + minutes;
+
+}
+
+
+/*
+    Converts a 24-hour "HH:MM" value from <input type="time"> to
+    the 12-hour "H:MM AM/PM" format stored in pickupConfiguration.
+*/
+function to12Hour(timeStr)
+{
+
+    if (!timeStr) { return ''; }
+
+    var timeParts = timeStr.split(':');
+    var hours     = parseInt(timeParts[0], 10);
+    var minutes   = (timeParts[1] || '00').substring(0, 2);
+    var period    = hours >= 12 ? 'PM' : 'AM';
+    var h12       = hours % 12 || 12;
+
+    return h12 + ':' + minutes + ' ' + period;
+
+}
+
+
+/* ── Pickup Window Helpers ── */
+
+/*
+    Renders the HTML for a single pickup window row.
+    win may be null when adding a new empty window.
+    index is 0-based and used for the "Window N" label.
+*/
+function renderPickupWindowHTML(win, index)
+{
+
+    var allDays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+    var days    = win && Array.isArray(win.days) ? win.days : [];
+    var start   = win && win.start ? to24Hour(win.start) : '';
+    var end     = win && win.end   ? to24Hour(win.end)   : '';
+
+    var dayButtons = allDays.map(function(day)
+    {
+        var isActive = days.indexOf(day) !== -1;
+        return '<button class="pickupWindowDay ' + (isActive ? 'isActive' : '') + '" type="button" data-day="' + day + '">' + day + '</button>';
+    }).join('');
+
+    return `
+        <div class="pickupWindowRow">
+
+            <div class="pickupWindowHeader">
+                <span class="pickupWindowLabel">Window ${index + 1}</span>
+                <button class="btn btnRed btnSm pickupWindowRemoveBtn" type="button">
+                    <i class="fa-solid fa-trash-can"></i> Remove
+                </button>
+            </div>
+
+            <div class="pickupWindowDays">
+                ${dayButtons}
+            </div>
+
+            <div class="pickupWindowTimes">
+                <div class="pickupWindowTimeGroup">
+                    <label class="formLabel">Start</label>
+                    <input class="formInput pickupWindowStart" type="time" value="${start}">
+                </div>
+                <div class="pickupWindowTimeGroup">
+                    <label class="formLabel">End</label>
+                    <input class="formInput pickupWindowEnd" type="time" value="${end}">
+                </div>
+            </div>
+
+        </div>
+    `;
+
+}
+
+
+/*
+    Wires day toggle clicks and remove buttons within a container.
+    Called on initial render and on each newly appended window row.
+*/
+function initializePickupWindowInteractions(container)
+{
+
+    container.querySelectorAll('.pickupWindowDay').forEach(function(btn)
+    {
+        btn.addEventListener('click', function()
+        {
+            btn.classList.toggle('isActive');
+        });
+    });
+
+    container.querySelectorAll('.pickupWindowRemoveBtn').forEach(function(btn)
+    {
+        btn.addEventListener('click', function()
+        {
+            var row = btn.closest('.pickupWindowRow');
+            if (row) { row.remove(); }
+            renumberPickupWindows();
+        });
+    });
+
+    container.querySelectorAll('[type="time"]').forEach(function(input)
+    {
+        input.addEventListener('click', function()
+        {
+            try { input.showPicker(); }
+            catch (e) {}
+        });
+    });
+
+}
+
+
+/*
+    Updates "Window N" labels after a row is removed.
+*/
+function renumberPickupWindows()
+{
+
+    document.querySelectorAll('.pickupWindowRow').forEach(function(row, i)
+    {
+        var label = row.querySelector('.pickupWindowLabel');
+        if (label) { label.textContent = 'Window ' + (i + 1); }
+    });
+
+}
+
+
 function renderSettingsPage()
 {
 
@@ -2046,6 +2197,12 @@ function renderSettingsPage()
             </div>
         `;
 
+    }).join('');
+
+    const pickupConfig      = config.pickupConfiguration || { message: '', windows: [] };
+    const pickupWindowsHTML = (pickupConfig.windows || []).map(function(win, i)
+    {
+        return renderPickupWindowHTML(win, i);
     }).join('');
 
     return `
@@ -2145,11 +2302,55 @@ function renderSettingsPage()
 
                     <div class="formGroup">
                         <label class="formLabel">Pickup Instructions</label>
-                        <p class="formHint">Shared with customers when their order is confirmed.</p>
-                        <textarea class="formInput formTextarea formTextareaLg" id="settPickupInstructions" placeholder="Pickup instructions for customers">${config.pickupInstructions}</textarea>
+                        <p class="formHint">Customer-facing pickup message shown on the website.</p>
+                        <textarea class="formInput formTextarea formTextareaLg" id="pickupConfigMessage" placeholder="Describe where and how customers should pick up their orders.">${pickupConfig.message || ''}</textarea>
                     </div>
 
-                    <button class="btn btnPrimary settingsSaveBtn settSavePickupInstructions">
+                    <div class="formGroup">
+                        <label class="formLabel">Pickup Windows</label>
+                        <p class="formHint">Set the days and hours available for order pickup.</p>
+                        <div class="pickupWindowList" id="pickupWindowList">
+                            ${pickupWindowsHTML}
+                        </div>
+                        <button class="btn btnGhost pickupWindowAddBtn" type="button" id="pickupWindowAddBtn">
+                            <i class="fa-solid fa-plus"></i> Add Pickup Window
+                        </button>
+                    </div>
+
+                    <button class="btn btnPrimary settingsSaveBtn settSavePickupConfiguration">
+                        <i class="fa-solid fa-floppy-disk"></i> Save Changes
+                    </button>
+
+                </div>
+
+            </div>
+
+            <!-- Order Availability -->
+            <div class="settingsCard">
+
+                <div class="settingsCardHeader">
+                    <i class="fa-solid fa-circle-dot" style="color: var(--clrPurpleLight); margin-right: 0.4rem;"></i>
+                    Order Availability
+                </div>
+
+                <div class="settingsCardBody">
+
+                    <div class="formGroup">
+                        <label class="formLabel">This Week's Status</label>
+                        <p class="formHint">Controls whether customers can submit new order requests.</p>
+                        <div class="availabilityToggle">
+                            <button class="availabilityOption ${config.orderAvailability === 'accepting' ? 'isActive' : ''}" data-value="accepting">
+                                <span class="availabilityDot availabilityDotGreen"></span>
+                                Accepting Orders
+                            </button>
+                            <button class="availabilityOption ${config.orderAvailability === 'closed' ? 'isActive' : ''}" data-value="closed">
+                                <span class="availabilityDot availabilityDotRed"></span>
+                                Closed This Week
+                            </button>
+                        </div>
+                    </div>
+
+                    <button class="btn btnPrimary settingsSaveBtn settSaveOrderAvailability">
                         <i class="fa-solid fa-floppy-disk"></i> Save Changes
                     </button>
 
@@ -2272,7 +2473,7 @@ async function saveProductionSchedule()
     document.querySelectorAll('.capacityInput').forEach(function(input)
     {
         const day = input.dataset.day;
-        BAKERY_CONFIG.dailyCapacity[day] = parseInt(input.value, 10) || 0;
+        BAKERY_CONFIG.dailyCapacity[day] = input.disabled ? 0 : (parseInt(input.value, 10) || 0);
     });
 
     const payload =
@@ -2298,22 +2499,6 @@ async function saveProductionSchedule()
     {
         setButtonLoading(btn, false);
     }
-
-}
-
-function savePickupInstructions()
-{
-
-    const input = document.getElementById('settPickupInstructions');
-
-    if (input)
-    {
-        BAKERY_CONFIG.pickupInstructions = input.value.trim();
-    }
-
-    // [SUPABASE HOOK: PATCH clients table — pickupInstructions]
-
-    showToast('success', 'Pickup instructions saved.');
 
 }
 
@@ -2362,6 +2547,93 @@ async function saveSocialLinks()
 
 }
 
+async function saveOrderAvailability()
+{
+
+    const activeBtn = document.querySelector('.availabilityOption.isActive');
+
+    if (activeBtn)
+    {
+        BAKERY_CONFIG.orderAvailability = activeBtn.dataset.value;
+    }
+
+    const payload = { orderAvailability: BAKERY_CONFIG.orderAvailability };
+
+    const btn = document.querySelector('.settSaveOrderAvailability');
+    setButtonLoading(btn, true);
+
+    try
+    {
+        await updateSettings(payload);
+        showToast('success', 'Order availability saved.');
+    }
+    catch (err)
+    {
+        showToast('warning', 'Could not save order availability. Please try again.');
+    }
+    finally
+    {
+        setButtonLoading(btn, false);
+    }
+
+}
+
+async function savePickupConfiguration()
+{
+
+    const messageEl = document.getElementById('pickupConfigMessage');
+    const message   = messageEl ? messageEl.value.trim() : '';
+
+    const windows = [];
+
+    document.querySelectorAll('.pickupWindowRow').forEach(function(row)
+    {
+
+        var days  = [];
+        var start = '';
+        var end   = '';
+
+        row.querySelectorAll('.pickupWindowDay.isActive').forEach(function(btn)
+        {
+            days.push(btn.dataset.day);
+        });
+
+        var startInput = row.querySelector('.pickupWindowStart');
+        var endInput   = row.querySelector('.pickupWindowEnd');
+
+        if (startInput && startInput.value) { start = to12Hour(startInput.value); }
+        if (endInput   && endInput.value)   { end   = to12Hour(endInput.value); }
+
+        if (days.length > 0 && start !== '' && end !== '')
+        {
+            windows.push({ days: days, start: start, end: end });
+        }
+
+    });
+
+    BAKERY_CONFIG.pickupConfiguration = { message: message, windows: windows };
+
+    const payload = { pickupConfiguration: BAKERY_CONFIG.pickupConfiguration };
+
+    const btn = document.querySelector('.settSavePickupConfiguration');
+    setButtonLoading(btn, true);
+
+    try
+    {
+        await updateSettings(payload);
+        showToast('success', 'Pickup configuration saved.');
+    }
+    catch (err)
+    {
+        showToast('warning', 'Could not save pickup configuration. Please try again.');
+    }
+    finally
+    {
+        setButtonLoading(btn, false);
+    }
+
+}
+
 function initializeSettingsInteractions()
 {
 
@@ -2400,6 +2672,35 @@ function initializeSettingsInteractions()
 
     });
 
+    // ── Number Input Auto-Select ──
+
+    document.querySelectorAll('.settingsGrid [type="number"]').forEach(function(input)
+    {
+        input.addEventListener('focus', function()
+        {
+            input.select();
+        });
+    });
+
+    // ── Availability Toggle ──
+
+    document.querySelectorAll('.availabilityOption').forEach(function(option)
+    {
+
+        option.addEventListener('click', function()
+        {
+
+            document.querySelectorAll('.availabilityOption').forEach(function(o)
+            {
+                o.classList.remove('isActive');
+            });
+
+            option.classList.add('isActive');
+
+        });
+
+    });
+
     // ── Save Buttons ──
 
     const saveBusinessInfoBtn = document.querySelector('.settSaveBusinessInfo');
@@ -2408,8 +2709,30 @@ function initializeSettingsInteractions()
     const saveScheduleBtn = document.querySelector('.settSaveProductionSchedule');
     if (saveScheduleBtn) { saveScheduleBtn.addEventListener('click', saveProductionSchedule); }
 
-    const savePickupBtn = document.querySelector('.settSavePickupInstructions');
-    if (savePickupBtn) { savePickupBtn.addEventListener('click', savePickupInstructions); }
+    const savePickupConfigBtn = document.querySelector('.settSavePickupConfiguration');
+    if (savePickupConfigBtn) { savePickupConfigBtn.addEventListener('click', savePickupConfiguration); }
+
+    const pickupWindowList = document.getElementById('pickupWindowList');
+    if (pickupWindowList) { initializePickupWindowInteractions(pickupWindowList); }
+
+    const addWindowBtn = document.getElementById('pickupWindowAddBtn');
+    if (addWindowBtn)
+    {
+        addWindowBtn.addEventListener('click', function()
+        {
+            const list  = document.getElementById('pickupWindowList');
+            const count = list ? list.querySelectorAll('.pickupWindowRow').length : 0;
+            const html  = renderPickupWindowHTML(null, count);
+            const temp  = document.createElement('div');
+            temp.innerHTML = html;
+            const newRow = temp.firstElementChild;
+            if (list) { list.appendChild(newRow); }
+            initializePickupWindowInteractions(newRow);
+        });
+    }
+
+    const saveOrderAvailabilityBtn = document.querySelector('.settSaveOrderAvailability');
+    if (saveOrderAvailabilityBtn) { saveOrderAvailabilityBtn.addEventListener('click', saveOrderAvailability); }
 
     const saveSocialBtn = document.querySelector('.settSaveSocialLinks');
     if (saveSocialBtn) { saveSocialBtn.addEventListener('click', saveSocialLinks); }
