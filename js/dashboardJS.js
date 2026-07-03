@@ -342,7 +342,6 @@ function renderPage(page, opts)
     if (renderer)
     {
         contentArea.innerHTML = renderer(opts);
-        if (page === 'settings') { console.log("✅ Settings page rendered."); }
         afterRender(page, opts);
     }
 
@@ -2215,7 +2214,12 @@ async function saveBusinessInfo()
     const phoneInput = document.getElementById('settPhone');
     const addrInput  = document.getElementById('settAddress');
 
-    if (nameInput)  { BAKERY_CONFIG.businessName   = nameInput.value.trim(); }
+    if (nameInput)
+    {
+        BAKERY_CONFIG.businessName = nameInput.value.trim();
+        const brandEl = document.getElementById('sidebarBusinessName');
+        if (brandEl) { brandEl.textContent = BAKERY_CONFIG.businessName; }
+    }
     if (phoneInput) { BAKERY_CONFIG.phone           = phoneInput.value.trim(); }
     if (addrInput)  { BAKERY_CONFIG.address         = addrInput.value.trim(); }
 
@@ -2361,8 +2365,6 @@ async function saveSocialLinks()
 function initializeSettingsInteractions()
 {
 
-    console.log("✅ initializeSettingsInteractions()");
-
     // ── Day Toggles ──
 
     document.querySelectorAll('.dayToggle').forEach(function(toggle)
@@ -2413,7 +2415,6 @@ function initializeSettingsInteractions()
     if (saveSocialBtn) { saveSocialBtn.addEventListener('click', saveSocialLinks); }
 
     // Load live settings from API and populate form fields
-    console.log("➡️ Calling loadSettingsFromAPI()");
     loadSettingsFromAPI();
 
 }
