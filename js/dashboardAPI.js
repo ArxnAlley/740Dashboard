@@ -1,5 +1,5 @@
 /* ============================================================
-   DASHBOARD API — SETTINGS INTEGRATION
+   DASHBOARD API — SETTINGS + ORDERS INTEGRATION
    dashboardAPI.js
 
    All communication between the dashboard and the 740Eatz
@@ -8,6 +8,12 @@
 
    API.baseUrl is the single configuration point for this file.
    No other file needs to know the API URL.
+
+   Sections:
+   1. API Configuration
+   2. HTTP Helpers (apiGet / apiPost)
+   3. Settings API + form population
+   4. Orders API + startup loader
 ============================================================ */
 
 
@@ -334,25 +340,20 @@ function setButtonLoading(btn, isLoading)
 
 
 /* ============================================================
-   SETTINGS API WARNING BANNER
+   API WARNING BANNER — SHARED BUILDER
 
-   Non-blocking banner inserted above the settings cards.
-   Styled to match the existing warning banner pattern used in Reviews.
-   Removed automatically when the next API request succeeds.
+   Both the Settings and Orders banners are non-blocking, amber,
+   dismissed automatically on the next successful request, and
+   identical in appearance — only their insertion point differs.
+   buildApiBannerElement() is the one place that markup is defined.
 ============================================================ */
 
-function showSettingsApiBanner(message)
+function buildApiBannerElement(id, message)
 {
-
-    const existing = document.getElementById('settingsApiBanner');
-    if (existing) { existing.remove(); }
-
-    const settingsGrid = document.querySelector('.settingsGrid');
-    if (!settingsGrid) { return; }
 
     const banner = document.createElement('div');
 
-    banner.id           = 'settingsApiBanner';
+    banner.id            = id;
     banner.style.cssText = `
         background: var(--clrAmberBg);
         border: 1px solid var(--clrAmberBorder);
@@ -365,6 +366,29 @@ function showSettingsApiBanner(message)
 
     banner.innerHTML = '<i class="fa-solid fa-triangle-exclamation" style="margin-right: 0.4rem;"></i>' + message;
 
+    return banner;
+
+}
+
+
+/* ============================================================
+   SETTINGS API WARNING BANNER
+
+   Non-blocking banner inserted above the settings cards.
+   Removed automatically when the next API request succeeds.
+============================================================ */
+
+function showSettingsApiBanner(message)
+{
+
+    const existing = document.getElementById('settingsApiBanner');
+    if (existing) { existing.remove(); }
+
+    const settingsGrid = document.querySelector('.settingsGrid');
+    if (!settingsGrid) { return; }
+
+    const banner = buildApiBannerElement('settingsApiBanner', message);
+
     settingsGrid.parentNode.insertBefore(banner, settingsGrid);
 
 }
@@ -373,6 +397,124 @@ function removeSettingsApiBanner()
 {
 
     const banner = document.getElementById('settingsApiBanner');
+    if (banner) { banner.remove(); }
+
+}
+
+
+/* ============================================================
+   ORDERS API
+
+   Order rows share one contract with the API and the Orders
+   sheet (see ORDERS_HEADERS in the Apps Script project):
+       id, clientId, customer, phone, email, product, size,
+       flavor, products, pickupDay, pickupDate, pickupTime,
+       productTotal, status, paymentStatus, notes, source,
+       submittedAt, updatedAt
+============================================================ */
+
+async function fetchOrders()
+{
+    return await apiGet('orders.list');
+}
+
+async function createOrder(payload)
+{
+    return await apiPost('orders.create', payload);
+}
+
+async function updateOrderStatusAPI(payload)
+{
+    return await apiPost('orders.updateStatus', payload);
+}
+
+
+/* ============================================================
+   ORDERS STARTUP LOADER
+
+   Called once on DOMContentLoaded (dashboardJS.js initialization).
+   Fills the shared ORDERS array in place from Google Sheets, then
+   re-renders the current page so every order view reflects live data.
+
+   On failure the dashboard stays usable with a persistent warning
+   banner (re-inserted after each render by maybeShowOrdersApiBanner,
+   hooked into afterRender).
+============================================================ */
+
+let ordersApiFailed = false;
+
+// False until the first orders.list attempt resolves (success or failure).
+// Order-dependent empty states (Dashboard widgets, Orders table, Production
+// sections) check this first so a page rendered before the fetch completes
+// shows "Loading orders…" instead of a false "nothing to do" empty state.
+let ordersLoaded = false;
+
+async function loadOrdersFromAPI()
+{
+
+    try
+    {
+        const data     = await fetchOrders();
+        const incoming = data && Array.isArray(data.orders) ? data.orders : [];
+
+        ORDERS.length = 0;
+
+        incoming.forEach(function(order)
+        {
+            ORDERS.push(order);
+        });
+
+        ordersApiFailed = false;
+    }
+    catch (err)
+    {
+        ordersApiFailed = true;
+    }
+
+    ordersLoaded = true;
+
+    // afterRender() refreshes the nav badge and re-shows the banner when needed
+    renderPage(currentPage);
+
+}
+
+
+/* ============================================================
+   ORDERS API WARNING BANNER
+
+   Same non-blocking pattern as the Settings banner, inserted at
+   the top of the content area. renderPage() wipes contentArea,
+   so afterRender() re-inserts the banner while the API is down.
+============================================================ */
+
+function maybeShowOrdersApiBanner()
+{
+
+    if (!ordersApiFailed) { return; }
+
+    showOrdersApiBanner('Could not load orders from the server. Refresh the page to try again.');
+
+}
+
+function showOrdersApiBanner(message)
+{
+
+    const existing = document.getElementById('ordersApiBanner');
+    if (existing) { existing.remove(); }
+
+    const contentArea = document.getElementById('contentArea');
+    if (!contentArea) { return; }
+
+    const banner = buildApiBannerElement('ordersApiBanner', message);
+
+    contentArea.insertBefore(banner, contentArea.firstChild);
+
+}
+
+function removeOrdersApiBanner()
+{
+
+    const banner = document.getElementById('ordersApiBanner');
     if (banner) { banner.remove(); }
 
 }

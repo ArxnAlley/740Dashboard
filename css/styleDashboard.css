@@ -1296,6 +1296,16 @@ img
 
     letter-spacing: 0.06em;
 
+    /* .kpiTop is a flex row with the fixed-size 34px icon as the other
+       child. flex:1 claims the remaining row width instead of sizing
+       to content; min-width:0 lets it shrink below its longest
+       unbroken word ("PRODUCTION") so that word wraps onto its own
+       line instead of overflowing past the card's edge and getting
+       clipped by .kpiCard's overflow:hidden. */
+    flex: 1;
+
+    min-width: 0;
+
 }
 
 .kpiIcon
@@ -2605,6 +2615,29 @@ img
 
 }
 
+/* ── Orders mobile card list — hidden by default; shown in place
+     of .ordersTableWrapper below 768px (see ORDERS & PRODUCTION —
+     MOBILE CARD REDESIGN). Styled entirely inside that media query
+     since it never appears at desktop widths. ── */
+
+.ordersCardList
+{
+
+    display: none;
+
+}
+
+/* ── Customers mobile card list — hidden by default; shown in
+     place of .customersTableWrapper below 768px (see CUSTOMERS —
+     MOBILE CARD REDESIGN). ── */
+
+.customersCardList
+{
+
+    display: none;
+
+}
+
 
 /* ============================================================
    PRODUCTION PAGE
@@ -2716,6 +2749,19 @@ img
     gap: 0.75rem;
 
     min-height: 80px;
+
+}
+
+/* ── Confirmed Queue / Pending Pickup mobile card variant — hidden
+     by default; shown in place of .productionQueueTable /
+     .pickupQueueTable below 768px (see ORDERS & PRODUCTION —
+     MOBILE CARD REDESIGN). Reuses .productionCards above, so this
+     only needs to win the display:none/flex toggle. ── */
+
+.productionMobileOnly
+{
+
+    display: none;
 
 }
 
@@ -3275,6 +3321,21 @@ img
     gap: 1rem;
 
     margin-bottom: 0.75rem;
+
+}
+
+.feedbackCardInfo
+{
+
+    /* .feedbackCardTop is a flex row with the rating + status badge
+       cluster (flex-shrink:0) as the other child. flex:1 claims the
+       remaining row width instead of sizing to content; min-width:0
+       lets it shrink below its intrinsic width so the name/phone/date
+       text wraps properly instead of overflowing past the card edge
+       and getting clipped, or forcing the badge cluster off the edge. */
+    flex: 1;
+
+    min-width: 0;
 
 }
 
@@ -4264,9 +4325,21 @@ img
 .helpFaqItem
 {
 
-    padding: 1.1rem 1.25rem;
-
     border-bottom: 1px solid var(--clrBorder);
+
+}
+
+.helpFaqItem:last-child
+{
+
+    border-bottom: none;
+
+}
+
+.helpFaqQuestion
+{
+
+    padding: 1.1rem 1.25rem;
 
     cursor: pointer;
 
@@ -4278,16 +4351,11 @@ img
 
     justify-content: space-between;
 
-}
-
-.helpFaqItem:last-child
-{
-
-    border-bottom: none;
+    gap: 1rem;
 
 }
 
-.helpFaqItem:hover
+.helpFaqQuestion:hover
 {
 
     background: var(--clrCardHover);
@@ -4311,6 +4379,58 @@ img
     color: var(--clrTextMuted);
 
     font-size: 0.8rem;
+
+    flex-shrink: 0;
+
+    transition: transform 0.25s ease;
+
+}
+
+.helpFaqItem.isOpen .helpFaqIcon
+{
+
+    transform: rotate(180deg);
+
+    color: var(--clrPurpleLight);
+
+}
+
+/*
+    Pure-CSS expand/collapse: max-height animates between 0 and a
+    value comfortably larger than any answer will need. overflow:hidden
+    clips the rest, so the transition still reads as a smooth reveal
+    regardless of the answer's actual text length.
+*/
+.helpFaqAnswer
+{
+
+    max-height: 0;
+
+    overflow: hidden;
+
+    transition: max-height 0.35s ease, padding 0.35s ease;
+
+    padding: 0 1.25rem;
+
+}
+
+.helpFaqItem.isOpen .helpFaqAnswer
+{
+
+    max-height: 320px;
+
+    padding: 0 1.25rem 1.15rem;
+
+}
+
+.helpFaqAnswerText
+{
+
+    font-size: 0.82rem;
+
+    color: var(--clrTextSub);
+
+    line-height: 1.6;
 
 }
 
@@ -4350,6 +4470,100 @@ img
     font-size: 0.82rem;
 
     color: var(--clrTextSub);
+
+}
+
+.helpContactActions
+{
+
+    display: flex;
+
+    justify-content: center;
+
+    flex-wrap: wrap;
+
+    gap: 0.6rem;
+
+    margin-top: 1.1rem;
+
+}
+
+/* ── Getting Started Workflow ── */
+
+.helpWorkflowCard
+{
+
+    display: flex;
+
+    flex-direction: column;
+
+    align-items: center;
+
+    padding: 2rem 1.5rem;
+
+}
+
+.helpWorkflowStep
+{
+
+    display: flex;
+
+    align-items: center;
+
+    gap: 0.85rem;
+
+    width: 100%;
+
+    max-width: 320px;
+
+}
+
+.helpWorkflowNumber
+{
+
+    width: 32px;
+
+    height: 32px;
+
+    border-radius: 50%;
+
+    background: var(--clrPurpleGlow);
+
+    color: var(--clrPurpleLight);
+
+    display: flex;
+
+    align-items: center;
+
+    justify-content: center;
+
+    font-weight: 700;
+
+    font-size: 0.85rem;
+
+    flex-shrink: 0;
+
+}
+
+.helpWorkflowLabel
+{
+
+    font-size: 0.88rem;
+
+    font-weight: 600;
+
+    color: var(--clrText);
+
+}
+
+.helpWorkflowArrow
+{
+
+    color: var(--clrTextDim);
+
+    font-size: 0.9rem;
+
+    margin: 0.2rem 0;
 
 }
 
@@ -4512,6 +4726,12 @@ img
 
     color: var(--clrTextMuted);
 
+    max-width: 360px;
+
+    margin: 0 auto;
+
+    line-height: 1.5;
+
 }
 
 
@@ -4654,17 +4874,32 @@ img
 
 /* ============================================================
    TABLET MEDIA QUERIES — max 1024px (icon-only collapsed sidebar)
+
+   Every rule below is scoped with :not(.isOpen) so the mobile
+   hamburger menu (≤768px, see MOBILE MEDIA QUERIES) can restore
+   the full expanded sidebar — identical to its desktop appearance —
+   as a temporary overlay. openMobileMenu()/closeMobileMenu() in
+   dashboardJS.js just toggle the .isOpen class; no JS change needed.
 ============================================================ */
 
 @media (max-width: 1024px)
 {
 
-    .sidebar
+    .sidebar:not(.isOpen)
     {
 
         width: var(--sidebarCollapsedWidth);
 
         overflow: visible;
+
+        transition: width var(--transitionMed);
+
+    }
+
+    .sidebar.isOpen
+    {
+
+        width: var(--sidebarWidth);
 
         transition: width var(--transitionMed);
 
@@ -4679,42 +4914,42 @@ img
 
     }
 
-    .sidebarLogoFull
+    .sidebar:not(.isOpen) .sidebarLogoFull
     {
 
         display: none;
 
     }
 
-    .sidebarCoLogo
+    .sidebar:not(.isOpen) .sidebarCoLogo
     {
 
         display: none;
 
     }
 
-    .sidebarLogoMark
+    .sidebar:not(.isOpen) .sidebarLogoMark
     {
 
         display: block;
 
     }
 
-    .sidebarProfile
+    .sidebar:not(.isOpen) .sidebarProfile
     {
 
         display: none;
 
     }
 
-    .sidebarCTAWrap
+    .sidebar:not(.isOpen) .sidebarCTAWrap
     {
 
         padding: 4px 6px 6px;
 
     }
 
-    .sidebarNewOrderBtn
+    .sidebar:not(.isOpen) .sidebarNewOrderBtn
     {
 
         justify-content: center;
@@ -4725,14 +4960,14 @@ img
 
     }
 
-    .sidebarNewOrderBtn span
+    .sidebar:not(.isOpen) .sidebarNewOrderBtn span
     {
 
         display: none;
 
     }
 
-    .navItem
+    .sidebar:not(.isOpen) .navItem
     {
 
         justify-content: center;
@@ -4745,14 +4980,14 @@ img
 
     }
 
-    .navItemText
+    .sidebar:not(.isOpen) .navItemText
     {
 
         display: none;
 
     }
 
-    .navBadge
+    .sidebar:not(.isOpen) .navBadge
     {
 
         position: absolute;
@@ -4773,7 +5008,7 @@ img
 
     }
 
-    .themeToggleBtn
+    .sidebar:not(.isOpen) .themeToggleBtn
     {
 
         justify-content: center;
@@ -4782,15 +5017,15 @@ img
 
     }
 
-    .themeToggleLabel,
-    .themeToggleSwitch
+    .sidebar:not(.isOpen) .themeToggleLabel,
+    .sidebar:not(.isOpen) .themeToggleSwitch
     {
 
         display: none;
 
     }
 
-    .logoutBtn
+    .sidebar:not(.isOpen) .logoutBtn
     {
 
         justify-content: center;
@@ -4799,29 +5034,29 @@ img
 
     }
 
-    .logoutBtn span
+    .sidebar:not(.isOpen) .logoutBtn span
     {
 
         display: none;
 
     }
 
-    .sidebarPoweredByText,
-    .sidebarVersion
+    .sidebar:not(.isOpen) .sidebarPoweredByText,
+    .sidebar:not(.isOpen) .sidebarVersion
     {
 
         display: none;
 
     }
 
-    .sidebarBottom
+    .sidebar:not(.isOpen) .sidebarBottom
     {
 
         padding: 12px 8px 18px;
 
     }
 
-    .sidebarBottomBrand
+    .sidebar:not(.isOpen) .sidebarBottomBrand
     {
 
         padding-top: 4px;
@@ -4865,13 +5100,6 @@ img
 
     }
 
-    .hamburgerBtn
-    {
-
-        display: none;
-
-    }
-
     .mobileTopBar
     {
 
@@ -4890,13 +5118,6 @@ img
     {
 
         padding: 1.25rem;
-
-    }
-
-    .kpiGrid
-    {
-
-        grid-template-columns: repeat(2, 1fr);
 
     }
 
@@ -4925,13 +5146,6 @@ img
 
     }
 
-    .tdActions
-    {
-
-        flex-wrap: wrap;
-
-    }
-
     /* ── Sidebar logo row aligns with mobile top bar ── */
 
     .sidebarLogoArea
@@ -4941,53 +5155,666 @@ img
 
     }
 
-    /* ── Production / pickup queues: horizontal scroll at phone widths ── */
-
-    .productionQueueTable,
-    .pickupQueueTable
-    {
-
-        overflow-x: auto;
-
-    }
-
-    .productionQueueRow
-    {
-
-        min-width: 480px;
-
-    }
-
-    .pickupQueueRow
-    {
-
-        min-width: 440px;
-
-    }
-
 }
 
-@media (max-width: 480px)
+
+/* ============================================================
+   DASHBOARD HOMEPAGE — MOBILE REDESIGN
+
+   The desktop KPI card shares one flex row (.kpiTop) between the
+   label and the icon, which only has room to avoid a collision
+   at desktop widths. Rather than keep squeezing that same row
+   into narrower grid columns per breakpoint, KPI cards get their
+   own mobile layout below: a single-column list where the icon
+   sits in its own grid column spanning the full card height, so
+   no label length can ever run into it, at any phone width.
+============================================================ */
+
+@media (max-width: 768px)
 {
+
+    /* ── Greeting ── */
+
+    .dashGreetingBlock
+    {
+
+        margin-bottom: 20px;
+
+    }
+
+    .dashGreetingText
+    {
+
+        font-size: 1.35rem;
+
+        line-height: 1.2;
+
+    }
+
+    .dashGreetingSub
+    {
+
+        margin-top: 4px;
+
+    }
+
+    /* ── KPI Cards — single column, icon-left row layout ── */
 
     .kpiGrid
     {
 
-        grid-template-columns: 1fr 1fr;
+        grid-template-columns: 1fr;
+
+        gap: 0.75rem;
+
+    }
+
+    .kpiCard
+    {
+
+        display: grid;
+
+        grid-template-columns: 40px 1fr;
+
+        column-gap: 0.85rem;
+
+        row-gap: 0.2rem;
+
+        padding: 0.9rem 1rem;
+
+    }
+
+    /* .kpiTop normally wraps the label and icon as one flex row;
+       display:contents removes it from layout so its two children
+       become direct grid items of .kpiCard below, without touching
+       the HTML that renderDashboardPage() renders. */
+    .kpiTop
+    {
+
+        display: contents;
+
+    }
+
+    .kpiIcon
+    {
+
+        grid-column: 1;
+
+        grid-row: 1 / span 3;
+
+        align-self: center;
+
+        width: 40px;
+
+        height: 40px;
+
+        font-size: 0.95rem;
+
+    }
+
+    .kpiLabel
+    {
+
+        grid-column: 2;
+
+        grid-row: 1;
 
     }
 
     .kpiValue
     {
 
-        font-size: 1.5rem;
+        grid-column: 2;
+
+        grid-row: 2;
+
+        font-size: 1.6rem;
 
     }
+
+    .kpiSub
+    {
+
+        grid-column: 2;
+
+        grid-row: 3;
+
+    }
+
+    /* ── Widget Spacing ── */
+
+    .dashGrid
+    {
+
+        gap: 0.85rem;
+
+    }
+
+    .widgetHeader
+    {
+
+        padding: 0.9rem 1rem 0.65rem;
+
+    }
+
+    .widgetBody
+    {
+
+        padding: 0.9rem 1rem;
+
+    }
+
+    /* ── Action Required — badges anchor to the top of the row
+         instead of centering into wrapped multi-line text ── */
+
+    .recentRequestItem
+    {
+
+        align-items: flex-start;
+
+        flex-wrap: wrap;
+
+        gap: 0.5rem 0.75rem;
+
+    }
+
+    .recentRequestInfo
+    {
+
+        min-width: 170px;
+
+    }
+
+    /* ── Pending Pickup widget — same wrap-safe treatment ── */
+
+    .productionQueueItem
+    {
+
+        align-items: flex-start;
+
+        flex-wrap: wrap;
+
+        gap: 0.5rem 0.75rem;
+
+    }
+
+    .pqiLeft
+    {
+
+        min-width: 140px;
+
+    }
+
+}
+
+
+/* ============================================================
+   ORDERS & PRODUCTION — MOBILE CARD REDESIGN
+
+   Below 768px, the desktop table/row layouts are hidden and a
+   parallel stacked-card layout (already rendered by dashboardJS.js
+   alongside the table markup) is shown instead. No columns are
+   shrunk and no horizontal scrolling is introduced — every order
+   or production item becomes its own full-width card.
+============================================================ */
+
+@media (max-width: 768px)
+{
+
+    /* ── Orders page: table -> cards ── */
+
+    .ordersTableWrapper
+    {
+
+        display: none;
+
+    }
+
+    .ordersCardList
+    {
+
+        display: flex;
+
+        flex-direction: column;
+
+        gap: 0.85rem;
+
+    }
+
+    .orderCard
+    {
+
+        background: var(--clrCard);
+
+        border: 1px solid var(--clrBorder);
+
+        border-radius: var(--radius);
+
+        padding: 1rem 1.1rem;
+
+        display: flex;
+
+        flex-direction: column;
+
+        gap: 0.5rem;
+
+    }
+
+    .orderCardHeader
+    {
+
+        display: flex;
+
+        align-items: center;
+
+        justify-content: space-between;
+
+        gap: 0.75rem;
+
+    }
+
+    .orderCardId
+    {
+
+        font-family: 'Courier New', monospace;
+
+        font-size: 0.78rem;
+
+        color: var(--clrTextMuted);
+
+    }
+
+    .orderCardCustomer
+    {
+
+        font-size: 0.95rem;
+
+        font-weight: 700;
+
+        color: var(--clrText);
+
+    }
+
+    .orderCardPhone
+    {
+
+        font-size: 0.82rem;
+
+        color: var(--clrBlue);
+
+        align-self: flex-start;
+
+    }
+
+    .orderCardProducts
+    {
+
+        font-size: 0.84rem;
+
+        color: var(--clrTextSub);
+
+    }
+
+    .orderCardMeta
+    {
+
+        display: flex;
+
+        align-items: center;
+
+        justify-content: space-between;
+
+        flex-wrap: wrap;
+
+        gap: 0.4rem 0.75rem;
+
+    }
+
+    .orderCardPickup
+    {
+
+        font-size: 0.78rem;
+
+        color: var(--clrTextMuted);
+
+    }
+
+    .orderCardActions
+    {
+
+        display: flex;
+
+        flex-direction: column;
+
+        gap: 0.5rem;
+
+        margin-top: 0.4rem;
+
+    }
+
+    .orderCardActions .btn
+    {
+
+        width: 100%;
+
+        justify-content: center;
+
+    }
+
+    /* ── Production page: table/row sections -> cards ──
+         .productionCard already exists (Today's Production uses it
+         at every width) — Confirmed Queue and Pending Pickup reuse
+         the exact same card styling for their mobile variant. */
+
+    .productionQueueTable,
+    .pickupQueueTable
+    {
+
+        display: none;
+
+    }
+
+    .productionMobileOnly
+    {
+
+        display: flex;
+
+    }
+
+    /* ── Kanban-style stage identity — a colored left edge lets the
+         three production stages read at a glance, without reading
+         each card's badge text. Pure structural selectors (adjacent-
+         sibling + :not()) target each section's existing card list
+         — no template changes needed since all three already share
+         the .productionCard/.productionCards classes. ── */
+
+    .productionQueueTable + .productionMobileOnly .productionCard
+    {
+
+        border-left: 3px solid var(--clrBlue);
+
+    }
+
+    .productionCards:not(.productionMobileOnly) .productionCard
+    {
+
+        border-left: 3px solid var(--clrAmber);
+
+    }
+
+    .pickupQueueTable + .productionMobileOnly .productionCard
+    {
+
+        border-left: 3px solid var(--clrGreen);
+
+    }
+
+    /* ── "Next Up" — Confirmed Queue is already sorted by soonest
+         pickup date, so its first card is genuinely the next order
+         due into production. A CSS-generated label calls it out
+         without any new markup or JS. ── */
+
+    .productionQueueTable + .productionMobileOnly .productionCard:first-child
+    {
+
+        position: relative;
+
+        padding-top: 1.6rem;
+
+    }
+
+    .productionQueueTable + .productionMobileOnly .productionCard:first-child::before
+    {
+
+        content: "NEXT UP";
+
+        position: absolute;
+
+        top: 0.6rem;
+
+        right: 0.9rem;
+
+        font-size: 0.62rem;
+
+        font-weight: 700;
+
+        letter-spacing: 0.06em;
+
+        color: var(--clrBlue);
+
+    }
+
+    /* ── Orders tab strip — wrapped pills instead of a scrolling
+         underline strip. Every status (and its count) stays visible
+         at a glance with zero horizontal scrolling required. ── */
+
+    .ordersTabBar
+    {
+
+        flex-wrap: wrap;
+
+        overflow-x: visible;
+
+        border-bottom: none;
+
+        gap: 0.5rem;
+
+        margin-bottom: 1rem;
+
+    }
+
+    .ordersTab
+    {
+
+        border: 1px solid var(--clrBorder);
+
+        border-radius: var(--radiusFull);
+
+        background: var(--clrSurface);
+
+        padding: 0.45rem 0.85rem;
+
+        font-size: 0.78rem;
+
+        margin-bottom: 0;
+
+    }
+
+    .ordersTab.isActive
+    {
+
+        background: var(--clrPurpleGlow);
+
+        border-color: rgba(168, 85, 247, 0.3);
+
+        color: var(--clrPurpleLight);
+
+    }
+
+}
+
+
+/* ============================================================
+   CUSTOMERS — MOBILE CARD REDESIGN
+
+   Same dual-markup pattern as Orders/Production: the desktop
+   table is hidden and the card list (already rendered alongside
+   it by renderCustomersPage()) is shown instead.
+============================================================ */
+
+@media (max-width: 768px)
+{
+
+    .customersTableWrapper
+    {
+
+        display: none;
+
+    }
+
+    .customersCardList
+    {
+
+        display: flex;
+
+        flex-direction: column;
+
+        gap: 0.85rem;
+
+    }
+
+    .customerCard
+    {
+
+        background: var(--clrCard);
+
+        border: 1px solid var(--clrBorder);
+
+        border-radius: var(--radius);
+
+        padding: 1rem 1.1rem;
+
+        display: flex;
+
+        flex-direction: column;
+
+        gap: 0.5rem;
+
+    }
+
+    .customerCardTop
+    {
+
+        display: flex;
+
+        align-items: center;
+
+        gap: 0.65rem;
+
+    }
+
+    .customerCardTop .customerAvatar
+    {
+
+        flex-shrink: 0;
+
+    }
+
+    .customerCardName
+    {
+
+        font-size: 0.95rem;
+
+        font-weight: 700;
+
+        color: var(--clrText);
+
+        flex: 1;
+
+        min-width: 0;
+
+        overflow: hidden;
+
+        text-overflow: ellipsis;
+
+        white-space: nowrap;
+
+    }
+
+    .customerCardPhone
+    {
+
+        font-size: 0.82rem;
+
+        color: var(--clrBlue);
+
+        align-self: flex-start;
+
+        padding: 0.2rem 0;
+
+    }
+
+    .customerCardEmail
+    {
+
+        font-size: 0.82rem;
+
+        color: var(--clrTextSub);
+
+        overflow-wrap: anywhere;
+
+    }
+
+    .customerCardOrders
+    {
+
+        font-size: 0.82rem;
+
+        color: var(--clrTextMuted);
+
+    }
+
+    .customerCardOrders strong
+    {
+
+        display: inline-flex;
+
+        align-items: center;
+
+        justify-content: center;
+
+        min-width: 22px;
+
+        padding: 0.1rem 0.45rem;
+
+        margin-right: 0.35rem;
+
+        background: var(--clrPurpleGlow);
+
+        color: var(--clrPurpleLight);
+
+        border-radius: var(--radiusFull);
+
+        font-size: 0.78rem;
+
+    }
+
+}
+
+
+@media (max-width: 480px)
+{
 
     .productsGrid
     {
 
         grid-template-columns: 1fr;
+
+    }
+
+}
+
+@media (max-width: 360px)
+{
+
+    /* Same available-width squeeze: the 5-star rating plus status
+       badge cluster leaves too little room beside the customer name.
+       Wrapping drops the cluster to its own line under the name
+       instead of forcing both onto one cramped row. A real min-width
+       is required here — at min-width:0 the browser always finds it
+       "fits" by shrinking .feedbackCardInfo down to nothing, so wrap
+       never actually triggers. */
+    .feedbackCardTop
+    {
+
+        flex-wrap: wrap;
+
+    }
+
+    .feedbackCardInfo
+    {
+
+        min-width: 140px;
 
     }
 
@@ -5000,15 +5827,6 @@ img
     {
 
         flex-direction: column;
-
-    }
-
-    .pickupWindowAddBtn,
-    .settSavePickupConfiguration
-    {
-
-        width:            100%;
-        justify-content:  center;
 
     }
 
@@ -5467,10 +6285,62 @@ img
 
     }
 
+    /* Single column instead of 2-across — at 320-360px a 2-column
+       squeeze forces labels like "ORDERS THIS WEEK" onto 3 lines
+       while their row sibling stays on 1, leaving the values
+       misaligned. A full-width row (value left, label right)
+       reads as a deliberate compact stat list instead. */
     .reportsSumGrid
     {
 
-        grid-template-columns: repeat(2, 1fr);
+        grid-template-columns: 1fr;
+
+        gap: 0.75rem;
+
+    }
+
+    .reportsSumCardNew
+    {
+
+        display: flex;
+
+        align-items: baseline;
+
+        justify-content: space-between;
+
+        padding: 1rem 1.1rem;
+
+    }
+
+    .reportsSumCardNewValue
+    {
+
+        margin-bottom: 0;
+
+    }
+
+}
+
+
+/* ============================================================
+   SETTINGS PAGE — MOBILE POLISH
+
+   Every "Save Changes" button and "Add Pickup Window" become
+   full-width for an easier thumb-reach target, and to read as one
+   consistent action row per card instead of a small button
+   floating at the card's natural content width.
+============================================================ */
+
+@media (max-width: 768px)
+{
+
+    .settingsSaveBtn,
+    .pickupWindowAddBtn
+    {
+
+        width: 100%;
+
+        justify-content: center;
 
     }
 
@@ -5902,18 +6772,6 @@ img
         transform: translateY(0);
 
     }
-
-}
-
-
-/* ============================================================
-   HELP PAGE — NON-INTERACTIVE FAQ
-============================================================ */
-
-.helpFaqItem
-{
-
-    cursor: default;
 
 }
 

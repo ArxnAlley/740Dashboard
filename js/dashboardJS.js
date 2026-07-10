@@ -150,6 +150,61 @@ function formatCurrency(amount)
 
 }
 
+/*
+    Returns the digits-only form of a phone value, safe for building a
+    tel: href. Coerces to string first — a phone cell can come back as
+    a JS number if Google Sheets ever auto-typed it before the API's
+    plain-text formatting took effect, and Number.prototype has no
+    .replace(), which previously crashed the order drawer outright.
+*/
+function phoneDigits(value)
+{
+
+    if (!value) { return ''; }
+
+    return String(value).replace(/\D/g, '');
+
+}
+
+/*
+    Formats a 10-digit US phone number as "(740) 555-0111" for display.
+    Customer numbers arrive as free-typed text from the Website and the
+    New Order modal, so formats vary. A leading country code "1" on an
+    11-digit number is dropped. Anything else (short codes, malformed
+    input) passes through unchanged rather than being mangled.
+*/
+function formatPhone(value)
+{
+
+    if (!value) { return ''; }
+
+    let digits = phoneDigits(value);
+
+    if (digits.length === 11 && digits.charAt(0) === '1')
+    {
+        digits = digits.slice(1);
+    }
+
+    if (digits.length !== 10) { return value; }
+
+    return '(' + digits.slice(0, 3) + ') ' + digits.slice(3, 6) + '-' + digits.slice(6);
+
+}
+
+/*
+    Standard inline loading indicator (spinner + message) used inside
+    an existing empty-state container while the Orders API request is
+    still in flight. Callers wrap this in whatever container fits their
+    context (emptyState div, productionEmpty div, or a table cell) —
+    see ordersLoaded in dashboardAPI.js for when this applies.
+*/
+function buildLoadingIndicator(message)
+{
+
+    return `<i class="fa-solid fa-spinner fa-spin" style="margin-bottom:0.5rem;font-size:1.25rem;color:var(--clrTextMuted);display:block;"></i>${message || 'Loading…'}`;
+
+}
+
 function buildBadge(statusOrPayment)
 {
 
@@ -208,6 +263,27 @@ function getTimeGreeting()
 
 }
 
+
+/*
+    Escapes HTML special characters in a string before injecting into innerHTML.
+    Required for any field that will eventually hold user-generated content:
+    customer names, notes, product descriptions, contact info, admin-entered text.
+*/
+function esc(str)
+{
+
+    if (!str && str !== 0) { return ''; }
+
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+
+}
+
+
 // Filters the ORDERS array by tab key, driven entirely by order status.
 function filterOrdersByTab(tab)
 {
@@ -257,6 +333,21 @@ function filterOrdersByTab(tab)
 ============================================================ */
 
 let currentPage = 'dashboard';
+
+function updateNavBadge()
+{
+
+    const navBadge = document.getElementById('navBadgeRequests');
+
+    if (navBadge)
+    {
+        navBadge.textContent = ORDERS.filter(function(o)
+        {
+            return o.status === STATUS.NEW_REQUEST;
+        }).length;
+    }
+
+}
 
 function navigateTo(page, opts)
 {
@@ -356,6 +447,12 @@ function afterRender(page, opts)
     if (page === 'reviews')    { initializeReviewsActions(); }
     if (page === 'settings')   { initializeSettingsInteractions(); }
     if (page === 'help')       { initializeHelpAccordion(); }
+
+    updateNavBadge();
+
+    // Persistent warning while the Orders API is unreachable —
+    // renderPage() wipes contentArea, so the banner is re-inserted here
+    maybeShowOrdersApiBanner();
 
 }
 
@@ -464,7 +561,9 @@ function renderDashboardPage()
         return o.status === STATUS.NEW_REQUEST || o.status === STATUS.AWAITING_PAYMENT;
     });
 
-    const attentionItems = needsAttention.length > 0
+    const attentionItems = !ordersLoaded
+        ? `<div class="emptyState">${buildLoadingIndicator('Loading orders…')}</div>`
+        : needsAttention.length > 0
         ? needsAttention.map(function(order)
         {
 
@@ -473,8 +572,8 @@ function renderDashboardPage()
             return `
                 <div class="recentRequestItem" style="cursor:pointer;" onclick="navigateTo('orders', {tab:'${tabKey}'})">
                     <div class="recentRequestInfo">
-                        <div class="recentRequestName">${order.customer}</div>
-                        <div class="recentRequestDetail">${order.products} · ${order.pickupDay} ${formatDate(order.pickupDate)}</div>
+                        <div class="recentRequestName">${esc(order.customer)}</div>
+                        <div class="recentRequestDetail">${esc(order.products)} · ${order.pickupDay} ${formatDate(order.pickupDate)}</div>
                     </div>
                     ${buildBadge(order.status)}
                 </div>
@@ -487,16 +586,18 @@ function renderDashboardPage()
 
     const pendingPickupOrders = ORDERS.filter(function(o) { return o.status === STATUS.PENDING_PICKUP; });
 
-    const pendingPickupItems = pendingPickupOrders.length > 0
+    const pendingPickupItems = !ordersLoaded
+        ? `<div class="emptyState">${buildLoadingIndicator('Loading orders…')}</div>`
+        : pendingPickupOrders.length > 0
         ? pendingPickupOrders.map(function(order)
         {
             return `
                 <div class="productionQueueItem">
                     <div class="pqiLeft">
-                        <div class="pqiCustomer">${order.customer}</div>
-                        <div class="pqiProducts">${order.products}</div>
+                        <div class="pqiCustomer">${esc(order.customer)}</div>
+                        <div class="pqiProducts">${esc(order.products)}</div>
                     </div>
-                    <div class="pqiTime">${order.pickupTime || order.pickupDay}</div>
+                    <div class="pqiTime">${esc(order.pickupTime || order.pickupDay)}</div>
                     ${buildBadge(order.status)}
                 </div>
             `;
@@ -508,7 +609,7 @@ function renderDashboardPage()
     const upcomingOrders = ORDERS
         .filter(function(o)
         {
-            return o.status === STATUS.CONFIRMED && o.pickupDate >= DEMO_TODAY;
+            return o.status === STATUS.CONFIRMED && o.pickupDate >= TODAY_DATE;
         })
         .sort(function(a, b) { return a.pickupDate.localeCompare(b.pickupDate); })
         .slice(0, 5)
@@ -517,27 +618,33 @@ function renderDashboardPage()
             return `
                 <div class="pickupItem">
                     <div class="pickupDate">${order.pickupDay} · ${formatDateShort(order.pickupDate)}</div>
-                    <div class="pickupCustomer">${order.customer}</div>
-                    <div class="pickupProducts">${order.products}${order.pickupTime ? ' · ' + order.pickupTime : ''}</div>
+                    <div class="pickupCustomer">${esc(order.customer)}</div>
+                    <div class="pickupProducts">${esc(order.products)}${order.pickupTime ? ' · ' + esc(order.pickupTime) : ''}</div>
                 </div>
             `;
         }).join('');
 
+    const upcomingOrdersHTML = !ordersLoaded
+        ? `<div class="emptyState">${buildLoadingIndicator('Loading orders…')}</div>`
+        : (upcomingOrders || '<div class="emptyState"><div class="emptyStateTitle">No upcoming orders</div></div>');
+
     // ── Activity Log ──
 
-    const activityItems = ACTIVITY_LOG.map(function(item)
-    {
-        return `
-            <div class="activityItem">
-                <div class="activityDot"><i class="fa-solid ${item.icon}"></i></div>
-                <div class="activityContent">
-                    <div class="activityMessage">${item.message}</div>
-                    <div class="activityDetail">${item.detail}</div>
-                    <div class="activityTime">${item.time}</div>
+    const activityItems = ACTIVITY_LOG.length > 0
+        ? ACTIVITY_LOG.map(function(item)
+        {
+            return `
+                <div class="activityItem">
+                    <div class="activityDot"><i class="fa-solid ${item.icon}"></i></div>
+                    <div class="activityContent">
+                        <div class="activityMessage">${item.message}</div>
+                        <div class="activityDetail">${item.detail}</div>
+                        <div class="activityTime">${item.time}</div>
+                    </div>
                 </div>
-            </div>
-        `;
-    }).join('');
+            `;
+        }).join('')
+        : `<div class="emptyState"><div class="emptyStateTitle">No recent activity</div><div class="emptyStateSub">Order events will appear here</div></div>`;
 
     return `
 
@@ -576,7 +683,7 @@ function renderDashboardPage()
                     <span class="widgetMeta">Confirmed Queue</span>
                 </div>
                 <div class="widgetBody">
-                    ${upcomingOrders || '<div class="emptyState"><div class="emptyStateTitle">No upcoming orders</div></div>'}
+                    ${upcomingOrdersHTML}
                 </div>
             </div>
 
@@ -650,7 +757,7 @@ function showNewOrderRequestModal()
 
             <div style="display: flex; flex-direction: column; gap: 1rem;">
 
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 0.75rem;">
                     <div class="formGroup">
                         <label class="formLabel">Customer Name</label>
                         <input class="formInput" type="text" id="nrCustomerName" placeholder="Full name">
@@ -666,18 +773,10 @@ function showNewOrderRequestModal()
                     <input class="formInput" type="text" id="nrProducts" placeholder="e.g. Large Tray, Chocolate Strawberries x2">
                 </div>
 
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
-                    <div class="formGroup">
-                        <label class="formLabel">Pickup Day</label>
-                        <select class="formInput" id="nrPickupDay">
-                            <option value="">Select day</option>
-                            ${BAKERY_CONFIG.pickupDays.map(function(d) { return '<option value="' + d + '">' + d + '</option>'; }).join('')}
-                        </select>
-                    </div>
-                    <div class="formGroup">
-                        <label class="formLabel">Preferred Date</label>
-                        <input class="formInput" type="date" id="nrPickupDate">
-                    </div>
+                <div class="formGroup">
+                    <label class="formLabel">Pickup Date</label>
+                    <input class="formInput" type="date" id="nrPickupDate">
+                    <p class="formHint">Pickup day is set automatically from the date.</p>
                 </div>
 
                 <div class="formGroup">
@@ -699,19 +798,35 @@ function showNewOrderRequestModal()
 
     document.body.appendChild(modal);
 
-    document.getElementById('closeNewOrderModal').addEventListener('click', function()
+    // Focus the first field so keyboard users land straight in the form
+    const firstField = document.getElementById('nrCustomerName');
+    if (firstField) { firstField.focus(); }
+
+    function handleModalEsc(e)
+    {
+        if (e.key === 'Escape') { closeModal(); }
+    }
+
+    function closeModal()
     {
         modal.remove();
-    });
+        document.removeEventListener('keydown', handleModalEsc);
+    }
 
-    document.getElementById('cancelNewOrderModal').addEventListener('click', function()
-    {
-        modal.remove();
-    });
+    document.addEventListener('keydown', handleModalEsc);
 
-    document.getElementById('submitNewOrderModal').addEventListener('click', function()
+    document.getElementById('closeNewOrderModal').addEventListener('click', closeModal);
+
+    document.getElementById('cancelNewOrderModal').addEventListener('click', closeModal);
+
+    document.getElementById('submitNewOrderModal').addEventListener('click', async function()
     {
-        const name = document.getElementById('nrCustomerName').value.trim();
+
+        const name       = document.getElementById('nrCustomerName').value.trim();
+        const phone      = document.getElementById('nrPhone').value.trim();
+        const products   = document.getElementById('nrProducts').value.trim();
+        const pickupDate = document.getElementById('nrPickupDate').value;
+        const notes      = document.getElementById('nrNotes').value.trim();
 
         if (!name)
         {
@@ -719,9 +834,76 @@ function showNewOrderRequestModal()
             return;
         }
 
-        modal.remove();
+        if (!phone)
+        {
+            showToast('warning', 'Please enter a phone number.');
+            return;
+        }
 
-        showToast('success', 'Order request from ' + name + ' submitted.');
+        if (!products)
+        {
+            showToast('warning', 'Please enter the requested products.');
+            return;
+        }
+
+        if (!pickupDate)
+        {
+            showToast('warning', 'Please select a preferred pickup date.');
+            return;
+        }
+
+        // Order id, status, and pickup day are assigned by the API —
+        // manual entries flow through the same orders.create endpoint
+        // as website submissions.
+        const nameParts = name.split(' ');
+
+        const payload =
+        {
+            firstName:  nameParts[0],
+            lastName:   nameParts.slice(1).join(' '),
+            phone:      phone,
+            product:    products,
+            pickupDate: pickupDate,
+            notes:      notes,
+            source:     'Dashboard Manual Entry'
+        };
+
+        const submitBtn = document.getElementById('submitNewOrderModal');
+
+        setButtonLoading(submitBtn, true);
+
+        try
+        {
+            const order = await createOrder(payload);
+
+            ORDERS.unshift(order);
+
+            closeModal();
+
+            // esc() — showToast renders via innerHTML and the name is user-typed
+            showToast('success', 'Order request ' + esc(order.id) + ' from ' + esc(order.customer) + ' submitted.');
+
+            // Refresh order views only — re-rendering Settings would
+            // discard unsaved form edits
+            if (currentPage === 'dashboard' || currentPage === 'orders' || currentPage === 'production')
+            {
+                renderPage(currentPage);
+            }
+            else
+            {
+                updateNavBadge();
+            }
+        }
+        catch (err)
+        {
+            const message = err && err.message
+                ? err.message
+                : 'Could not submit the order request. Please try again.';
+
+            showToast('warning', message);
+
+            setButtonLoading(submitBtn, false);
+        }
 
     });
 
@@ -729,9 +911,84 @@ function showNewOrderRequestModal()
     {
         if (e.target === modal)
         {
-            modal.remove();
+            closeModal();
         }
     });
+
+}
+
+
+/* ============================================================
+   ORDER STATUS CHANGES
+
+   Single write path for every workflow action (orders table,
+   order drawer, and production board). Persists the change
+   through the Apps Script API (orders.updateStatus), then
+   applies it to the in-memory order so the next render matches
+   Google Sheets. The UI only advances when the write succeeds.
+
+   opts.confirmMessage guards against accidental single-click
+   mistakes (Mark Paid, Reject, Cancel, Mark Ready, Complete Pickup —
+   every status change with no "undo" path in the UI). One native
+   confirm() here replaces what used to be duplicated window.confirm
+   + early-return boilerplate at each call site.
+============================================================ */
+
+async function applyOrderStatusChange(button, orderId, nextStatus, options)
+{
+
+    const order = ORDERS.find(function(o) { return o.id === orderId; });
+
+    if (!order)
+    {
+        showToast('warning', 'Order ' + orderId + ' was not found. Please refresh the page.');
+        return false;
+    }
+
+    const opts = options || {};
+
+    if (opts.confirmMessage && !window.confirm(opts.confirmMessage))
+    {
+        return false;
+    }
+
+    setButtonLoading(button, true);
+
+    try
+    {
+
+        const payload = { id: orderId, status: nextStatus };
+
+        if (opts.paymentStatus) { payload.paymentStatus = opts.paymentStatus; }
+
+        const updated = await updateOrderStatusAPI(payload);
+
+        // Sync the in-memory row with the authoritative sheet record
+        order.status = updated && updated.status ? updated.status : nextStatus;
+
+        if (updated && updated.paymentStatus)
+        {
+            order.paymentStatus = updated.paymentStatus;
+        }
+        else if (opts.paymentStatus)
+        {
+            order.paymentStatus = opts.paymentStatus;
+        }
+
+        if (updated && updated.updatedAt) { order.updatedAt = updated.updatedAt; }
+
+        return true;
+
+    }
+    catch (err)
+    {
+        showToast('warning', 'Could not update ' + orderId + '. Please try again.');
+        return false;
+    }
+    finally
+    {
+        setButtonLoading(button, false);
+    }
 
 }
 
@@ -767,12 +1024,27 @@ function renderOrdersPage(opts)
         filteredOrders.sort(function(a, b) { return a.pickupDate.localeCompare(b.pickupDate); });
     }
 
-    const tableRows = filteredOrders.length > 0
+    const tableRows = !ordersLoaded
+        ? `<tr><td colspan="6" style="text-align:center; padding: 2rem; color: var(--clrTextMuted); font-size: 0.84rem;">${buildLoadingIndicator('Loading orders…')}</td></tr>`
+        : filteredOrders.length > 0
         ? filteredOrders.map(function(order)
         {
             return buildOrderTableRow(order, activeTab, showPhone);
         }).join('')
         : `<tr><td colspan="6" style="text-align:center; padding: 2rem; color: var(--clrTextMuted); font-size: 0.84rem;">No orders in this stage</td></tr>`;
+
+    // ── Mobile card variant — same rows, stacked-card layout instead
+    // of a table. Phone is always shown here (not tab-conditional like
+    // the desktop table) since tap-to-call is useful at every stage. ──
+
+    const cardsHTML = !ordersLoaded
+        ? `<div class="productionEmpty">${buildLoadingIndicator('Loading orders…')}</div>`
+        : filteredOrders.length > 0
+        ? filteredOrders.map(function(order)
+        {
+            return buildOrderCardMobile(order, activeTab);
+        }).join('')
+        : `<div class="productionEmpty">No orders in this stage</div>`;
 
     const activeCount = ORDERS.filter(function(o)
     {
@@ -794,7 +1066,7 @@ function renderOrdersPage(opts)
             ${tabsHTML}
         </div>
 
-        <div class="tableWrapper">
+        <div class="tableWrapper ordersTableWrapper">
 
             <table class="dataTable">
 
@@ -817,7 +1089,20 @@ function renderOrdersPage(opts)
 
         </div>
 
+        <div class="ordersCardList" id="ordersCardList">
+            ${cardsHTML}
+        </div>
+
     `;
+
+}
+
+function formatOrderPickupText(order)
+{
+
+    return order.pickupDate
+        ? `${order.pickupDay} · ${formatDate(order.pickupDate)}${order.pickupTime ? ' · ' + esc(order.pickupTime) : ''}`
+        : order.pickupDay;
 
 }
 
@@ -825,12 +1110,8 @@ function buildOrderTableRow(order, tab, showPhone)
 {
 
     const customerCell = showPhone && order.phone
-        ? `<td><div class="tdCustomer">${order.customer}</div><span class="orderPhone">${order.phone}</span></td>`
-        : `<td class="tdCustomer">${order.customer}</td>`;
-
-    const pickupCell = order.pickupDate
-        ? `${order.pickupDay} · ${formatDate(order.pickupDate)}${order.pickupTime ? ' · ' + order.pickupTime : ''}`
-        : order.pickupDay;
+        ? `<td><div class="tdCustomer">${esc(order.customer)}</div><span class="orderPhone">${esc(formatPhone(order.phone))}</span></td>`
+        : `<td class="tdCustomer">${esc(order.customer)}</td>`;
 
     const actions = buildOrderRowActions(order, tab);
 
@@ -838,8 +1119,8 @@ function buildOrderTableRow(order, tab, showPhone)
         <tr class="orderTableRow" data-id="${order.id}">
             <td class="tdId">${order.id}</td>
             ${customerCell}
-            <td class="tdMuted">${order.products}</td>
-            <td class="tdMuted">${pickupCell}</td>
+            <td class="tdMuted">${esc(order.products)}</td>
+            <td class="tdMuted">${formatOrderPickupText(order)}</td>
             <td>${buildBadge(order.paymentStatus)}</td>
             <td>
                 <div class="tdActions">
@@ -847,6 +1128,36 @@ function buildOrderTableRow(order, tab, showPhone)
                 </div>
             </td>
         </tr>
+    `;
+
+}
+
+function buildOrderCardMobile(order, tab)
+{
+
+    const phoneHTML = order.phone
+        ? `<a class="orderCardPhone phoneTel" href="tel:${phoneDigits(order.phone)}"><i class="fa-solid fa-phone"></i> ${esc(formatPhone(order.phone))}</a>`
+        : '';
+
+    const actions = buildOrderRowActions(order, tab);
+
+    return `
+        <div class="orderCard" data-id="${order.id}">
+            <div class="orderCardHeader">
+                <span class="orderCardId">${order.id}</span>
+                ${buildBadge(order.status)}
+            </div>
+            <div class="orderCardCustomer">${esc(order.customer)}</div>
+            ${phoneHTML}
+            <div class="orderCardProducts">${esc(order.products)}</div>
+            <div class="orderCardMeta">
+                <span class="orderCardPickup"><i class="fa-solid fa-calendar-day"></i> ${formatOrderPickupText(order)}</span>
+                ${buildBadge(order.paymentStatus)}
+            </div>
+            <div class="orderCardActions">
+                ${actions}
+            </div>
+        </div>
     `;
 
 }
@@ -908,6 +1219,16 @@ function initializeOrdersTabs()
 
     });
 
+    // Keeps the active tab visible in the scrollable mobile tab strip —
+    // without this, navigating straight to a tab near the end (e.g. from
+    // a KPI card deep link) can leave it scrolled off-screen.
+    const activeTab = document.querySelector('.ordersTab.isActive');
+
+    if (activeTab && typeof activeTab.scrollIntoView === 'function')
+    {
+        activeTab.scrollIntoView({ inline: 'center', block: 'nearest' });
+    }
+
 }
 
 function initializeOrdersActions()
@@ -918,20 +1239,19 @@ function initializeOrdersActions()
     document.querySelectorAll('.btnContactCustomer').forEach(function(btn)
     {
 
-        btn.addEventListener('click', function()
+        btn.addEventListener('click', async function()
         {
 
             const id    = btn.dataset.id;
             const order = ORDERS.find(function(o) { return o.id === id; });
+            const ok    = await applyOrderStatusChange(btn, id, STATUS.AWAITING_PAYMENT);
 
-            if (order)
+            if (ok)
             {
-                order.status = STATUS.AWAITING_PAYMENT;
-
                 // [TWILIO HOOK: Log outbound contact attempt]
-                // [SUPABASE HOOK: PATCH orders table status]
 
-                showToast('info', 'Call or text ' + order.customer + ' and share payment details.');
+                // esc() — customer names originate from public website input
+                showToast('info', 'Call or text ' + esc(order ? order.customer : id) + ' and share payment details.');
 
                 renderPage('orders', { tab: 'awaitingPayment' });
             }
@@ -945,18 +1265,18 @@ function initializeOrdersActions()
     document.querySelectorAll('.btnMarkPaid').forEach(function(btn)
     {
 
-        btn.addEventListener('click', function()
+        btn.addEventListener('click', async function()
         {
 
-            const id    = btn.dataset.id;
-            const order = ORDERS.find(function(o) { return o.id === id; });
-
-            if (order)
+            const id = btn.dataset.id;
+            const ok = await applyOrderStatusChange(btn, id, STATUS.CONFIRMED,
             {
-                order.paymentStatus = 'paid';
-                order.status        = STATUS.CONFIRMED;
+                paymentStatus:  'paid',
+                confirmMessage: 'Mark ' + id + ' as paid and confirmed?'
+            });
 
-                // [SUPABASE HOOK: PATCH orders table paymentStatus + status]
+            if (ok)
+            {
                 // [TWILIO HOOK: SMS confirmation to customer]
                 // [CALENDAR HOOK: Create Google Calendar event for pickup date]
 
@@ -974,7 +1294,7 @@ function initializeOrdersActions()
     document.querySelectorAll('.btnRejectOrder').forEach(function(btn)
     {
 
-        btn.addEventListener('click', function()
+        btn.addEventListener('click', async function()
         {
 
             const id    = btn.dataset.id;
@@ -985,20 +1305,17 @@ function initializeOrdersActions()
                 return;
             }
 
-            const confirmed = window.confirm('Reject order ' + id + ' from ' + order.customer + '?');
-
-            if (!confirmed)
+            const ok = await applyOrderStatusChange(btn, id, STATUS.CANCELLED,
             {
-                return;
+                confirmMessage: 'Reject order ' + id + ' from ' + order.customer + '?'
+            });
+
+            if (ok)
+            {
+                showToast('info', id + ' rejected.');
+
+                renderPage('orders', { tab: 'newRequest' });
             }
-
-            order.status = STATUS.CANCELLED;
-
-            // [SUPABASE HOOK: PATCH orders table status]
-
-            showToast('info', id + ' rejected.');
-
-            renderPage('orders', { tab: 'newRequest' });
 
         });
 
@@ -1009,7 +1326,7 @@ function initializeOrdersActions()
     document.querySelectorAll('.btnCancelOrder').forEach(function(btn)
     {
 
-        btn.addEventListener('click', function()
+        btn.addEventListener('click', async function()
         {
 
             const id    = btn.dataset.id;
@@ -1020,20 +1337,17 @@ function initializeOrdersActions()
                 return;
             }
 
-            const confirmed = window.confirm('Cancel order ' + id + ' for ' + order.customer + '?');
-
-            if (!confirmed)
+            const ok = await applyOrderStatusChange(btn, id, STATUS.CANCELLED,
             {
-                return;
+                confirmMessage: 'Cancel order ' + id + ' for ' + order.customer + '?'
+            });
+
+            if (ok)
+            {
+                showToast('info', id + ' cancelled.');
+
+                renderPage('orders', { tab: 'cancelled' });
             }
-
-            order.status = STATUS.CANCELLED;
-
-            // [SUPABASE HOOK: PATCH orders table status]
-
-            showToast('info', id + ' cancelled.');
-
-            renderPage('orders', { tab: 'cancelled' });
 
         });
 
@@ -1044,17 +1358,17 @@ function initializeOrdersActions()
     document.querySelectorAll('.btnMarkReady').forEach(function(btn)
     {
 
-        btn.addEventListener('click', function()
+        btn.addEventListener('click', async function()
         {
 
-            const id    = btn.dataset.id;
-            const order = ORDERS.find(function(o) { return o.id === id; });
-
-            if (order)
+            const id = btn.dataset.id;
+            const ok = await applyOrderStatusChange(btn, id, STATUS.PENDING_PICKUP,
             {
-                order.status = STATUS.PENDING_PICKUP;
+                confirmMessage: 'Mark ' + id + ' ready for pickup?'
+            });
 
-                // [SUPABASE HOOK: PATCH orders table status]
+            if (ok)
+            {
                 // [TWILIO HOOK: SMS to customer — order is ready]
 
                 showToast('success', id + ' ready for pickup.');
@@ -1071,17 +1385,17 @@ function initializeOrdersActions()
     document.querySelectorAll('.btnCompletePickup').forEach(function(btn)
     {
 
-        btn.addEventListener('click', function()
+        btn.addEventListener('click', async function()
         {
 
-            const id    = btn.dataset.id;
-            const order = ORDERS.find(function(o) { return o.id === id; });
-
-            if (order)
+            const id = btn.dataset.id;
+            const ok = await applyOrderStatusChange(btn, id, STATUS.COMPLETED,
             {
-                order.status = STATUS.COMPLETED;
+                confirmMessage: 'Mark ' + id + ' as picked up?'
+            });
 
-                // [SUPABASE HOOK: PATCH orders table status]
+            if (ok)
+            {
                 // [REVIEWS HOOK: Trigger post-pickup SMS feedback survey]
 
                 showToast('success', id + ' — pickup completed.');
@@ -1093,7 +1407,7 @@ function initializeOrdersActions()
 
     });
 
-    // ── Row Click → Order Detail Drawer ──
+    // ── Row Click → Order Detail Drawer (desktop table) ──
 
     const tbody = document.getElementById('ordersTableBody');
 
@@ -1113,6 +1427,32 @@ function initializeOrdersActions()
             if (row)
             {
                 showOrderDrawer(row.dataset.id);
+            }
+
+        });
+
+    }
+
+    // ── Card Tap → Order Detail Drawer (mobile card list) ──
+
+    const cardList = document.getElementById('ordersCardList');
+
+    if (cardList)
+    {
+
+        cardList.addEventListener('click', function(e)
+        {
+
+            if (e.target.closest('button') || e.target.closest('a'))
+            {
+                return;
+            }
+
+            const card = e.target.closest('.orderCard');
+
+            if (card)
+            {
+                showOrderDrawer(card.dataset.id);
             }
 
         });
@@ -1224,7 +1564,7 @@ function showOrderDrawer(orderId)
         ? `
             <div class="drawerSection">
                 <div class="drawerLabel">Notes</div>
-                <div class="drawerNotes">${order.notes}</div>
+                <div class="drawerNotes">${esc(order.notes)}</div>
             </div>
         `
         : '';
@@ -1253,18 +1593,18 @@ function showOrderDrawer(orderId)
 
             <div class="drawerSection">
                 <div class="drawerLabel">Customer</div>
-                <div class="drawerValue">${order.customer}</div>
-                ${order.phone ? `<a class="drawerPhoneLink" href="tel:${order.phone.replace(/\D/g, '')}">${order.phone}</a>` : ''}
+                <div class="drawerValue">${esc(order.customer)}</div>
+                ${order.phone ? `<a class="drawerPhoneLink" href="tel:${phoneDigits(order.phone)}">${esc(formatPhone(order.phone))}</a>` : ''}
             </div>
 
             <div class="drawerSection">
                 <div class="drawerLabel">Products</div>
-                <div class="drawerValue">${order.products}</div>
+                <div class="drawerValue">${esc(order.products)}</div>
             </div>
 
             <div class="drawerSection">
                 <div class="drawerLabel">Pickup</div>
-                <div class="drawerValue">${order.pickupDay}${order.pickupDate ? ' · ' + formatDate(order.pickupDate) : ''}${order.pickupTime ? ' · ' + order.pickupTime : ''}</div>
+                <div class="drawerValue">${order.pickupDay}${order.pickupDate ? ' · ' + formatDate(order.pickupDate) : ''}${order.pickupTime ? ' · ' + esc(order.pickupTime) : ''}</div>
             </div>
 
             ${notesSection}
@@ -1273,6 +1613,7 @@ function showOrderDrawer(orderId)
                 <div class="drawerLabel">Payment</div>
                 <div class="drawerPaymentRow">
                     ${buildBadge(order.paymentStatus)}
+                    ${order.productTotal > 0 ? `<span class="drawerValue">${formatCurrency(order.productTotal)}</span>` : ''}
                 </div>
             </div>
 
@@ -1311,20 +1652,19 @@ function showOrderDrawer(orderId)
     if (drawerContactBtn)
     {
 
-        drawerContactBtn.addEventListener('click', function()
+        drawerContactBtn.addEventListener('click', async function()
         {
 
             const id    = drawerContactBtn.dataset.id;
             const found = ORDERS.find(function(o) { return o.id === id; });
+            const ok    = await applyOrderStatusChange(drawerContactBtn, id, STATUS.AWAITING_PAYMENT);
 
-            if (found)
+            if (ok)
             {
-                found.status = STATUS.AWAITING_PAYMENT;
-
                 // [TWILIO HOOK: Log outbound contact attempt]
-                // [SUPABASE HOOK: PATCH orders table status]
 
-                showToast('info', 'Call or text ' + found.customer + ' and share payment details.');
+                // esc() — customer names originate from public website input
+                showToast('info', 'Call or text ' + esc(found ? found.customer : id) + ' and share payment details.');
 
                 closeOrderDrawer();
 
@@ -1342,18 +1682,18 @@ function showOrderDrawer(orderId)
     if (drawerMarkPaidBtn)
     {
 
-        drawerMarkPaidBtn.addEventListener('click', function()
+        drawerMarkPaidBtn.addEventListener('click', async function()
         {
 
-            const id    = drawerMarkPaidBtn.dataset.id;
-            const found = ORDERS.find(function(o) { return o.id === id; });
-
-            if (found)
+            const id = drawerMarkPaidBtn.dataset.id;
+            const ok = await applyOrderStatusChange(drawerMarkPaidBtn, id, STATUS.CONFIRMED,
             {
-                found.paymentStatus = 'paid';
-                found.status        = STATUS.CONFIRMED;
+                paymentStatus:  'paid',
+                confirmMessage: 'Mark ' + id + ' as paid and confirmed?'
+            });
 
-                // [SUPABASE HOOK: PATCH orders table paymentStatus + status]
+            if (ok)
+            {
                 // [TWILIO HOOK: SMS confirmation to customer]
                 // [CALENDAR HOOK: Create Google Calendar event for pickup date]
 
@@ -1375,7 +1715,7 @@ function showOrderDrawer(orderId)
     if (drawerRejectBtn)
     {
 
-        drawerRejectBtn.addEventListener('click', function()
+        drawerRejectBtn.addEventListener('click', async function()
         {
 
             const id    = drawerRejectBtn.dataset.id;
@@ -1383,19 +1723,19 @@ function showOrderDrawer(orderId)
 
             if (!found) { return; }
 
-            const ok = window.confirm('Reject order ' + id + ' from ' + found.customer + '?');
+            const ok = await applyOrderStatusChange(drawerRejectBtn, id, STATUS.CANCELLED,
+            {
+                confirmMessage: 'Reject order ' + id + ' from ' + found.customer + '?'
+            });
 
-            if (!ok) { return; }
+            if (ok)
+            {
+                showToast('info', id + ' rejected.');
 
-            found.status = STATUS.CANCELLED;
+                closeOrderDrawer();
 
-            // [SUPABASE HOOK: PATCH orders table status]
-
-            showToast('info', id + ' rejected.');
-
-            closeOrderDrawer();
-
-            renderPage('orders', { tab: 'newRequest' });
+                renderPage('orders', { tab: 'newRequest' });
+            }
 
         });
 
@@ -1408,7 +1748,7 @@ function showOrderDrawer(orderId)
     if (drawerCancelBtn)
     {
 
-        drawerCancelBtn.addEventListener('click', function()
+        drawerCancelBtn.addEventListener('click', async function()
         {
 
             const id    = drawerCancelBtn.dataset.id;
@@ -1416,19 +1756,19 @@ function showOrderDrawer(orderId)
 
             if (!found) { return; }
 
-            const ok = window.confirm('Cancel order ' + id + ' for ' + found.customer + '?');
+            const ok = await applyOrderStatusChange(drawerCancelBtn, id, STATUS.CANCELLED,
+            {
+                confirmMessage: 'Cancel order ' + id + ' for ' + found.customer + '?'
+            });
 
-            if (!ok) { return; }
+            if (ok)
+            {
+                showToast('info', id + ' cancelled.');
 
-            found.status = STATUS.CANCELLED;
+                closeOrderDrawer();
 
-            // [SUPABASE HOOK: PATCH orders table status]
-
-            showToast('info', id + ' cancelled.');
-
-            closeOrderDrawer();
-
-            renderPage('orders', { tab: 'cancelled' });
+                renderPage('orders', { tab: 'cancelled' });
+            }
 
         });
 
@@ -1441,17 +1781,17 @@ function showOrderDrawer(orderId)
     if (drawerReadyBtn)
     {
 
-        drawerReadyBtn.addEventListener('click', function()
+        drawerReadyBtn.addEventListener('click', async function()
         {
 
-            const id    = drawerReadyBtn.dataset.id;
-            const found = ORDERS.find(function(o) { return o.id === id; });
-
-            if (found)
+            const id = drawerReadyBtn.dataset.id;
+            const ok = await applyOrderStatusChange(drawerReadyBtn, id, STATUS.PENDING_PICKUP,
             {
-                found.status = STATUS.PENDING_PICKUP;
+                confirmMessage: 'Mark ' + id + ' ready for pickup?'
+            });
 
-                // [SUPABASE HOOK: PATCH orders table status]
+            if (ok)
+            {
                 // [TWILIO HOOK: SMS to customer — order is ready]
 
                 showToast('success', id + ' ready for pickup.');
@@ -1472,17 +1812,17 @@ function showOrderDrawer(orderId)
     if (drawerCompleteBtn)
     {
 
-        drawerCompleteBtn.addEventListener('click', function()
+        drawerCompleteBtn.addEventListener('click', async function()
         {
 
-            const id    = drawerCompleteBtn.dataset.id;
-            const found = ORDERS.find(function(o) { return o.id === id; });
-
-            if (found)
+            const id = drawerCompleteBtn.dataset.id;
+            const ok = await applyOrderStatusChange(drawerCompleteBtn, id, STATUS.COMPLETED,
             {
-                found.status = STATUS.COMPLETED;
+                confirmMessage: 'Mark ' + id + ' as picked up?'
+            });
 
-                // [SUPABASE HOOK: PATCH orders table status]
+            if (ok)
+            {
                 // [REVIEWS HOOK: Trigger post-pickup SMS feedback survey]
 
                 showToast('success', id + ' — pickup completed.');
@@ -1576,15 +1916,17 @@ function renderProductionPage()
 
     // ── Section 1: Confirmed Queue ──
 
-    const confirmedQueueHTML = confirmedQueueOrders.length > 0
+    const confirmedQueueHTML = !ordersLoaded
+        ? `<div class="productionEmpty">${buildLoadingIndicator('Loading orders…')}</div>`
+        : confirmedQueueOrders.length > 0
         ? confirmedQueueOrders.map(function(order)
         {
 
             return `
                 <div class="productionQueueRow">
-                    <div class="pqrId">${order.id}</div>
-                    <div class="pqrCustomer">${order.customer}</div>
-                    <div class="pqrProducts">${order.products}</div>
+                    <div class="pqrId">${esc(order.id)}</div>
+                    <div class="pqrCustomer">${esc(order.customer)}</div>
+                    <div class="pqrProducts">${esc(order.products)}</div>
                     <div class="pqrPickup">${order.pickupDay} · ${formatDateShort(order.pickupDate)}</div>
                     <div class="pqrNote">Scheduled for ${order.pickupDay}</div>
                 </div>
@@ -1593,20 +1935,49 @@ function renderProductionPage()
         }).join('')
         : `<div class="productionEmpty">No orders in the confirmed queue</div>`;
 
+    // ── Section 1 (mobile card variant) — same data, card layout ──
+    // Reuses .productionCard/.productionCardFooter exactly as Today's
+    // Production does below, so no new CSS is needed for the cards
+    // themselves — only the container toggle that shows this instead
+    // of .productionQueueTable at phone/tablet widths.
+
+    const confirmedQueueCardsHTML = !ordersLoaded
+        ? `<div class="productionEmpty">${buildLoadingIndicator('Loading orders…')}</div>`
+        : confirmedQueueOrders.length > 0
+        ? confirmedQueueOrders.map(function(order)
+        {
+
+            return `
+                <div class="productionCard">
+                    <div class="productionCardId">${esc(order.id)}</div>
+                    <div class="productionCardCustomer">${esc(order.customer)}</div>
+                    <div class="productionCardProducts">${esc(order.products)}</div>
+                    <div class="productionCardFooter">
+                        ${buildBadge(order.status)}
+                        <div class="productionCardTime">${order.pickupDay} · ${formatDateShort(order.pickupDate)}</div>
+                    </div>
+                </div>
+            `;
+
+        }).join('')
+        : `<div class="productionEmpty">No orders in the confirmed queue</div>`;
+
     // ── Section 2: Today's Production ──
 
-    const todaysProductionHTML = todaysProductionOrders.length > 0
+    const todaysProductionHTML = !ordersLoaded
+        ? `<div class="productionEmpty">${buildLoadingIndicator('Loading orders…')}</div>`
+        : todaysProductionOrders.length > 0
         ? todaysProductionOrders.map(function(order)
         {
             return `
                 <div class="productionCard">
-                    <div class="productionCardId">${order.id}</div>
-                    <div class="productionCardCustomer">${order.customer}</div>
-                    <div class="productionCardProducts">${order.products}</div>
-                    ${order.notes ? `<div class="productionCardNotes">${order.notes}</div>` : ''}
+                    <div class="productionCardId">${esc(order.id)}</div>
+                    <div class="productionCardCustomer">${esc(order.customer)}</div>
+                    <div class="productionCardProducts">${esc(order.products)}</div>
+                    ${order.notes ? `<div class="productionCardNotes">${esc(order.notes)}</div>` : ''}
                     <div class="productionCardFooter">
                         ${buildBadge(order.status)}
-                        <div class="productionCardTime">${order.pickupTime || ''}</div>
+                        <div class="productionCardTime">${esc(order.pickupTime || '')}</div>
                         <button class="btn btnGreen btnSm btnAdvanceProduction" data-id="${order.id}" data-next="${STATUS.PENDING_PICKUP}">Mark Ready for Pickup</button>
                     </div>
                 </div>
@@ -1616,16 +1987,44 @@ function renderProductionPage()
 
     // ── Section 3: Pending Pickup ──
 
-    const pendingPickupHTML = pendingPickupOrders.length > 0
+    const pendingPickupHTML = !ordersLoaded
+        ? `<div class="productionEmpty">${buildLoadingIndicator('Loading orders…')}</div>`
+        : pendingPickupOrders.length > 0
         ? pendingPickupOrders.map(function(order)
         {
 
             return `
                 <div class="pickupQueueRow">
-                    <div class="pkrCustomer">${order.customer}</div>
-                    <div class="pkrProducts">${order.products}</div>
-                    <div class="pkrTime">${order.pickupDay}${order.pickupDate ? ' · ' + formatDateShort(order.pickupDate) : ''}${order.pickupTime ? ' · ' + order.pickupTime : ''}</div>
+                    <div class="pkrCustomer">${esc(order.customer)}</div>
+                    <div class="pkrProducts">${esc(order.products)}</div>
+                    <div class="pkrTime">${order.pickupDay}${order.pickupDate ? ' · ' + formatDateShort(order.pickupDate) : ''}${order.pickupTime ? ' · ' + esc(order.pickupTime) : ''}</div>
                     <button class="btn btnPrimary btnSm btnCompletePickupProduction" data-id="${order.id}">Complete Pickup</button>
+                </div>
+            `;
+
+        }).join('')
+        : `<div class="productionEmpty">No orders waiting for pickup</div>`;
+
+    // ── Section 3 (mobile card variant) — same data, card layout ──
+    // Reuses the exact .btnCompletePickupProduction class, so
+    // initializeProductionActions() wires this button with no changes.
+
+    const pendingPickupCardsHTML = !ordersLoaded
+        ? `<div class="productionEmpty">${buildLoadingIndicator('Loading orders…')}</div>`
+        : pendingPickupOrders.length > 0
+        ? pendingPickupOrders.map(function(order)
+        {
+
+            return `
+                <div class="productionCard">
+                    <div class="productionCardId">${esc(order.id)}</div>
+                    <div class="productionCardCustomer">${esc(order.customer)}</div>
+                    <div class="productionCardProducts">${esc(order.products)}</div>
+                    <div class="productionCardFooter">
+                        ${buildBadge(STATUS.PENDING_PICKUP)}
+                        <div class="productionCardTime">${order.pickupDay}${order.pickupDate ? ' · ' + formatDateShort(order.pickupDate) : ''}${order.pickupTime ? ' · ' + esc(order.pickupTime) : ''}</div>
+                        <button class="btn btnPrimary btnSm btnCompletePickupProduction" data-id="${order.id}">Complete Pickup</button>
+                    </div>
                 </div>
             `;
 
@@ -1646,6 +2045,9 @@ function renderProductionPage()
         <div class="productionQueueTable" style="margin-bottom: 2rem;">
             ${confirmedQueueHTML}
         </div>
+        <div class="productionCards productionMobileOnly" style="margin-bottom: 2rem;">
+            ${confirmedQueueCardsHTML}
+        </div>
 
         <div class="productionSectionLabel">Today&rsquo;s Production</div>
         <div class="productionSectionSub">Orders moved here by Apps Script when production begins. Mark each ready when complete.</div>
@@ -1657,6 +2059,9 @@ function renderProductionPage()
         <div class="productionSectionSub">Made and ready — waiting for customer arrival.</div>
         <div class="pickupQueueTable">
             ${pendingPickupHTML}
+        </div>
+        <div class="productionCards productionMobileOnly">
+            ${pendingPickupCardsHTML}
         </div>
 
     `;
@@ -1671,18 +2076,18 @@ function initializeProductionActions()
     document.querySelectorAll('.btnAdvanceProduction').forEach(function(btn)
     {
 
-        btn.addEventListener('click', function()
+        btn.addEventListener('click', async function()
         {
 
             const id         = btn.dataset.id;
             const nextStatus = btn.dataset.next;
-            const order      = ORDERS.find(function(o) { return o.id === id; });
-
-            if (order)
+            const ok         = await applyOrderStatusChange(btn, id, nextStatus,
             {
-                order.status = nextStatus;
+                confirmMessage: 'Mark ' + id + ' ready for pickup?'
+            });
 
-                // [SUPABASE HOOK: PATCH orders table status]
+            if (ok)
+            {
                 // [TWILIO HOOK: SMS to customer — order is ready for pickup]
 
                 showToast('success', id + ' ready for pickup.');
@@ -1699,17 +2104,17 @@ function initializeProductionActions()
     document.querySelectorAll('.btnCompletePickupProduction').forEach(function(btn)
     {
 
-        btn.addEventListener('click', function()
+        btn.addEventListener('click', async function()
         {
 
-            const id    = btn.dataset.id;
-            const order = ORDERS.find(function(o) { return o.id === id; });
-
-            if (order)
+            const id = btn.dataset.id;
+            const ok = await applyOrderStatusChange(btn, id, STATUS.COMPLETED,
             {
-                order.status = STATUS.COMPLETED;
+                confirmMessage: 'Mark ' + id + ' as picked up?'
+            });
 
-                // [SUPABASE HOOK: PATCH orders table status]
+            if (ok)
+            {
                 // [REVIEWS HOOK: Trigger post-pickup SMS feedback survey]
 
                 showToast('success', id + ' — pickup completed.');
@@ -1734,9 +2139,9 @@ function renderCustomersPage()
     const tableRows = CUSTOMERS.map(function(customer)
     {
 
-        const phoneTel    = customer.phone ? customer.phone.replace(/\D/g, '') : '';
+        const phoneTel    = phoneDigits(customer.phone);
         const phoneDisplay = customer.phone
-            ? `<a class="phoneTel" href="tel:${phoneTel}">${customer.phone}</a>`
+            ? `<a class="phoneTel" href="tel:${phoneTel}">${esc(formatPhone(customer.phone))}</a>`
             : '—';
 
         return `
@@ -1744,15 +2149,39 @@ function renderCustomersPage()
                 <td>
                     <div style="display: flex; align-items: center; gap: 0.6rem;">
                         <div class="customerAvatar">${getInitials(customer.name)}</div>
-                        <span class="tdCustomer">${customer.name}</span>
+                        <span class="tdCustomer">${esc(customer.name)}</span>
                     </div>
                 </td>
                 <td class="tdMuted">${phoneDisplay}</td>
-                <td class="tdMuted">${customer.email}</td>
+                <td class="tdMuted">${esc(customer.email)}</td>
                 <td style="font-weight: 700; color: var(--clrText);">${customer.lifetimeOrders}</td>
                 <td style="font-weight: 700; color: var(--clrGreen);">${formatCurrency(customer.lifetimeSpend)}</td>
-                <td class="tdMuted" style="max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${customer.notes || '—'}</td>
+                <td class="tdMuted" style="max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${customer.notes ? esc(customer.notes) : '—'}</td>
             </tr>
+        `;
+
+    }).join('');
+
+    // ── Mobile card variant — Avatar, Name, Phone, Email, Lifetime Orders ──
+
+    const customerCards = CUSTOMERS.map(function(customer)
+    {
+
+        const phoneTel    = phoneDigits(customer.phone);
+        const phoneDisplay = customer.phone
+            ? `<a class="customerCardPhone phoneTel" href="tel:${phoneTel}"><i class="fa-solid fa-phone"></i> ${esc(formatPhone(customer.phone))}</a>`
+            : '';
+
+        return `
+            <div class="customerCard">
+                <div class="customerCardTop">
+                    <div class="customerAvatar">${getInitials(customer.name)}</div>
+                    <div class="customerCardName">${esc(customer.name)}</div>
+                </div>
+                ${phoneDisplay}
+                <div class="customerCardEmail">${esc(customer.email)}</div>
+                <div class="customerCardOrders"><strong>${customer.lifetimeOrders}</strong> lifetime order${customer.lifetimeOrders === 1 ? '' : 's'}</div>
+            </div>
         `;
 
     }).join('');
@@ -1768,7 +2197,7 @@ function renderCustomersPage()
 
         </div>
 
-        <div class="tableWrapper">
+        <div class="tableWrapper customersTableWrapper">
 
             <table class="dataTable">
 
@@ -1789,6 +2218,10 @@ function renderCustomersPage()
 
             </table>
 
+        </div>
+
+        <div class="customersCardList">
+            ${customerCards}
         </div>
 
     `;
@@ -1819,15 +2252,15 @@ function renderReviewsPage()
             ? `<button class="btn btnGreen btnSm btnMarkResolved" data-id="${fb.id}">Mark Resolved</button>`
             : '';
 
-        const phoneTel = fb.phone ? fb.phone.replace(/\D/g, '') : '';
+        const phoneTel = phoneDigits(fb.phone);
 
         return `
             <div class="feedbackCard ${isResolved ? 'isResolved' : 'isOpen'}">
                 <div class="feedbackCardTop">
-                    <div>
-                        <div class="feedbackCustomer">${fb.customer}</div>
+                    <div class="feedbackCardInfo">
+                        <div class="feedbackCustomer">${esc(fb.customer)}</div>
                         <div class="feedbackMeta">
-                            ${fb.phone ? `<a class="feedbackPhone phoneTel" href="tel:${phoneTel}">${fb.phone}</a>` : ''}
+                            ${fb.phone ? `<a class="feedbackPhone phoneTel" href="tel:${phoneTel}">${esc(formatPhone(fb.phone))}</a>` : ''}
                             <span>·</span>
                             <span>${formatDate(fb.date)}</span>
                         </div>
@@ -1837,8 +2270,8 @@ function renderReviewsPage()
                         ${statusBadge}
                     </div>
                 </div>
-                <div class="feedbackIssue">${fb.issue}</div>
-                ${fb.notes ? `<div class="feedbackNotes">${fb.notes}</div>` : ''}
+                <div class="feedbackIssue">${esc(fb.issue)}</div>
+                ${fb.notes ? `<div class="feedbackNotes">${esc(fb.notes)}</div>` : ''}
                 ${resolveBtn ? `<div class="feedbackActions">${resolveBtn}</div>` : ''}
             </div>
         `;
@@ -1846,7 +2279,7 @@ function renderReviewsPage()
     }).join('');
 
     const emptyState = REVIEWS_DATA.length === 0
-        ? `<div class="emptyState"><i class="fa-solid fa-face-smile" style="font-size:2rem;color:var(--clrGreen);margin-bottom:0.75rem;"></i><div class="emptyStateTitle">No feedback yet</div><div class="emptyStateSub">Customer feedback will appear here</div></div>`
+        ? `<div class="emptyState"><i class="fa-solid fa-comment-dots" style="font-size:2rem;color:var(--clrPurpleLight);margin-bottom:0.75rem;"></i><div class="emptyStateTitle">No customer feedback yet</div><div class="emptyStateSub">When customers submit private feedback through your review system, it will appear here so you can resolve issues before they become public Google reviews.</div></div>`
         : '';
 
     return `
@@ -1913,39 +2346,54 @@ function renderReportsPage()
 
     // [SUPABASE HOOK: Replace REPORTS_DATA with live aggregate queries on the orders table]
 
-    const data = REPORTS_DATA;
+    const data     = REPORTS_DATA;
+    const hasCharts = data.weeklyOrders.length > 0 || data.productPopularity.length > 0;
 
-    const maxOrderCount    = Math.max.apply(null, data.weeklyOrders.map(function(d) { return d.count; }));
-    const maxProductOrders = Math.max.apply(null, data.productPopularity.map(function(d) { return d.orders; }));
+    const chartsOrEmptyState = hasCharts
+        ? (function()
+        {
+            const maxOrderCount    = Math.max.apply(null, data.weeklyOrders.map(function(d) { return d.count; }));
+            const maxProductOrders = Math.max.apply(null, data.productPopularity.map(function(d) { return d.orders; }));
 
-    const orderBars = data.weeklyOrders.map(function(day)
-    {
+            const orderBars = data.weeklyOrders.map(function(day)
+            {
+                const barPx = maxOrderCount > 0 ? Math.max(4, Math.round((day.count / maxOrderCount) * 88)) : 4;
 
-        const barPx = maxOrderCount > 0 ? Math.max(4, Math.round((day.count / maxOrderCount) * 88)) : 4;
+                return `
+                    <div class="barChartItem">
+                        <div class="barChartFill colorPurple" style="height: ${barPx}px"></div>
+                        <div class="barChartLabel">${day.label}<br>${day.count}</div>
+                    </div>
+                `;
+            }).join('');
 
-        return `
-            <div class="barChartItem">
-                <div class="barChartFill colorPurple" style="height: ${barPx}px"></div>
-                <div class="barChartLabel">${day.label}<br>${day.count}</div>
-            </div>
-        `;
+            const productBars = data.productPopularity.map(function(product)
+            {
+                const pct = maxProductOrders > 0 ? Math.round((product.orders / maxProductOrders) * 100) : 0;
 
-    }).join('');
+                return `
+                    <div class="hBarItem">
+                        <div class="hBarName">${product.name}</div>
+                        <div class="hBarTrack"><div class="hBarFill" style="width: ${pct}%"></div></div>
+                        <div class="hBarCount">${product.orders}</div>
+                    </div>
+                `;
+            }).join('');
 
-    const productBars = data.productPopularity.map(function(product)
-    {
-
-        const pct = maxProductOrders > 0 ? Math.round((product.orders / maxProductOrders) * 100) : 0;
-
-        return `
-            <div class="hBarItem">
-                <div class="hBarName">${product.name}</div>
-                <div class="hBarTrack"><div class="hBarFill" style="width: ${pct}%"></div></div>
-                <div class="hBarCount">${product.orders}</div>
-            </div>
-        `;
-
-    }).join('');
+            return `
+                <div class="reportsGrid">
+                    <div class="reportCard">
+                        <div class="reportCardTitle">Weekly Orders</div>
+                        <div class="barChart">${orderBars}</div>
+                    </div>
+                    <div class="reportCard">
+                        <div class="reportCardTitle">Popular Products</div>
+                        <div class="hBarChart" style="margin-top: 0.5rem;">${productBars}</div>
+                    </div>
+                </div>
+            `;
+        })()
+        : `<div class="emptyState"><i class="fa-solid fa-chart-line" style="font-size:2rem;color:var(--clrPurpleLight);margin-bottom:0.75rem;"></i><div class="emptyStateTitle">No reporting data yet</div><div class="emptyStateSub">As customers begin placing orders, your reports and business insights will automatically appear here.</div></div>`;
 
     return `
 
@@ -1967,12 +2415,12 @@ function renderReportsPage()
 
             <div class="reportsSumCardNew">
                 <div class="reportsSumCardNewValue">${formatCurrency(data.weeklyRevenueSummary.total)}</div>
-                <div class="reportsSumCardNewLabel">Revenue This Week</div>
+                <div class="reportsSumCardNewLabel">Revenue</div>
             </div>
 
             <div class="reportsSumCardNew">
                 <div class="reportsSumCardNewValue">${formatCurrency(data.weeklyRevenueSummary.avgOrderValue)}</div>
-                <div class="reportsSumCardNewLabel">Avg Order Value</div>
+                <div class="reportsSumCardNewLabel">Average Order</div>
             </div>
 
             <div class="reportsSumCardNew">
@@ -1982,23 +2430,7 @@ function renderReportsPage()
 
         </div>
 
-        <div class="reportsGrid">
-
-            <div class="reportCard">
-                <div class="reportCardTitle">Weekly Orders — Jun 23 to Jun 30</div>
-                <div class="barChart">
-                    ${orderBars}
-                </div>
-            </div>
-
-            <div class="reportCard">
-                <div class="reportCardTitle">Popular Products — All Time</div>
-                <div class="hBarChart" style="margin-top: 0.5rem;">
-                    ${productBars}
-                </div>
-            </div>
-
-        </div>
+        ${chartsOrEmptyState}
 
     `;
 
@@ -2200,10 +2632,12 @@ function renderSettingsPage()
     }).join('');
 
     const pickupConfig      = config.pickupConfiguration || { message: '', windows: [] };
-    const pickupWindowsHTML = (pickupConfig.windows || []).map(function(win, i)
-    {
-        return renderPickupWindowHTML(win, i);
-    }).join('');
+    const pickupWindows     = Array.isArray(pickupConfig.windows) && pickupConfig.windows.length > 0
+        ? pickupConfig.windows
+        : null;
+    const pickupWindowsHTML = pickupWindows
+        ? pickupWindows.map(function(win, i) { return renderPickupWindowHTML(win, i); }).join('')
+        : renderPickupWindowHTML(null, 0);
 
     return `
 
@@ -2230,22 +2664,22 @@ function renderSettingsPage()
 
                     <div class="formGroup">
                         <label class="formLabel">Business Name</label>
-                        <input class="formInput" type="text" id="settBusinessName" value="${config.businessName}" placeholder="Business name">
+                        <input class="formInput" type="text" id="settBusinessName" value="${esc(config.businessName)}" placeholder="Business name">
                     </div>
 
                     <div class="formGroup">
                         <label class="formLabel">Owner Name</label>
-                        <input class="formInput" type="text" id="settOwnerName" value="${config.ownerFullName}" placeholder="Owner name">
+                        <input class="formInput" type="text" id="settOwnerName" value="${esc(config.ownerFullName)}" placeholder="Owner name">
                     </div>
 
                     <div class="formGroup">
                         <label class="formLabel">Phone</label>
-                        <input class="formInput" type="tel" id="settPhone" value="${config.phone}" placeholder="Phone number">
+                        <input class="formInput" type="tel" id="settPhone" value="${esc(config.phone)}" placeholder="Phone number">
                     </div>
 
                     <div class="formGroup">
                         <label class="formLabel">Address</label>
-                        <input class="formInput" type="text" id="settAddress" value="${config.address}" placeholder="Business address">
+                        <input class="formInput" type="text" id="settAddress" value="${esc(config.address)}" placeholder="Business address">
                     </div>
 
                     <button class="btn btnPrimary settingsSaveBtn settSaveBusinessInfo">
@@ -2303,7 +2737,7 @@ function renderSettingsPage()
                     <div class="formGroup">
                         <label class="formLabel">Pickup Instructions</label>
                         <p class="formHint">Customer-facing pickup message shown on the website.</p>
-                        <textarea class="formInput formTextarea formTextareaLg" id="pickupConfigMessage" placeholder="Describe where and how customers should pick up their orders.">${pickupConfig.message || ''}</textarea>
+                        <textarea class="formInput formTextarea formTextareaLg" id="pickupConfigMessage" placeholder="Describe where and how customers should pick up their orders.">${esc(pickupConfig.message || '')}</textarea>
                     </div>
 
                     <div class="formGroup">
@@ -2370,27 +2804,27 @@ function renderSettingsPage()
 
                     <div class="formGroup">
                         <label class="formLabel">Google Review Link</label>
-                        <input class="formInput" type="url" id="settGoogleReview" value="${config.googleReviewLink}" placeholder="Google review URL">
+                        <input class="formInput" type="url" id="settGoogleReview" value="${esc(config.googleReviewLink)}" placeholder="Google review URL">
                     </div>
 
                     <div class="formGroup">
                         <label class="formLabel">Facebook</label>
-                        <input class="formInput" type="url" id="settFacebook" value="${config.social.facebook}" placeholder="Facebook URL">
+                        <input class="formInput" type="url" id="settFacebook" value="${esc(config.social.facebook)}" placeholder="Facebook URL">
                     </div>
 
                     <div class="formGroup">
                         <label class="formLabel">TikTok</label>
-                        <input class="formInput" type="url" id="settTiktok" value="${config.social.tiktok}" placeholder="TikTok URL">
+                        <input class="formInput" type="url" id="settTiktok" value="${esc(config.social.tiktok)}" placeholder="TikTok URL">
                     </div>
 
                     <div class="formGroup">
                         <label class="formLabel">Instagram</label>
-                        <input class="formInput" type="url" id="settInstagram" value="${config.social.instagram}" placeholder="Instagram URL">
+                        <input class="formInput" type="url" id="settInstagram" value="${esc(config.social.instagram)}" placeholder="Instagram URL">
                     </div>
 
                     <div class="formGroup">
                         <label class="formLabel">Website</label>
-                        <input class="formInput" type="url" id="settWebsite" value="${config.website}" placeholder="https://yourwebsite.com">
+                        <input class="formInput" type="url" id="settWebsite" value="${esc(config.website)}" placeholder="https://yourwebsite.com">
                     </div>
 
                     <button class="btn btnPrimary settingsSaveBtn settSaveSocialLinks">
@@ -2415,27 +2849,12 @@ async function saveBusinessInfo()
     const phoneInput = document.getElementById('settPhone');
     const addrInput  = document.getElementById('settAddress');
 
-    if (nameInput)
-    {
-        BAKERY_CONFIG.businessName = nameInput.value.trim();
-        const brandEl = document.getElementById('sidebarBusinessName');
-        if (brandEl) { brandEl.textContent = BAKERY_CONFIG.businessName; }
-    }
-    if (phoneInput) { BAKERY_CONFIG.phone           = phoneInput.value.trim(); }
-    if (addrInput)  { BAKERY_CONFIG.address         = addrInput.value.trim(); }
-
-    if (ownerInput)
-    {
-        BAKERY_CONFIG.ownerFullName = ownerInput.value.trim();
-        BAKERY_CONFIG.ownerName     = ownerInput.value.trim().split(' ')[0];
-    }
-
     const payload =
     {
-        businessName:  BAKERY_CONFIG.businessName,
-        ownerFullName: BAKERY_CONFIG.ownerFullName,
-        phone:         BAKERY_CONFIG.phone,
-        address:       BAKERY_CONFIG.address
+        businessName:  nameInput  ? nameInput.value.trim()  : BAKERY_CONFIG.businessName,
+        ownerFullName: ownerInput ? ownerInput.value.trim() : BAKERY_CONFIG.ownerFullName,
+        phone:         phoneInput ? phoneInput.value.trim() : BAKERY_CONFIG.phone,
+        address:       addrInput  ? addrInput.value.trim()  : BAKERY_CONFIG.address
     };
 
     const btn = document.querySelector('.settSaveBusinessInfo');
@@ -2444,6 +2863,16 @@ async function saveBusinessInfo()
     try
     {
         await updateSettings(payload);
+
+        BAKERY_CONFIG.businessName  = payload.businessName;
+        BAKERY_CONFIG.ownerFullName = payload.ownerFullName;
+        BAKERY_CONFIG.ownerName     = payload.ownerFullName.split(' ')[0];
+        BAKERY_CONFIG.phone         = payload.phone;
+        BAKERY_CONFIG.address       = payload.address;
+
+        const brandEl = document.getElementById('sidebarBusinessName');
+        if (brandEl) { brandEl.textContent = BAKERY_CONFIG.businessName; }
+
         showToast('success', 'Business information saved.');
     }
     catch (err)
@@ -2460,27 +2889,25 @@ async function saveBusinessInfo()
 async function saveProductionSchedule()
 {
 
-    const activeDays = [];
+    const activeDays  = [];
+    const newCapacity = {};
 
     document.querySelectorAll('.dayToggle.isActive').forEach(function(toggle)
     {
         activeDays.push(toggle.dataset.day);
     });
 
-    BAKERY_CONFIG.productionDays = activeDays;
-    BAKERY_CONFIG.pickupDays     = activeDays.slice();
-
     document.querySelectorAll('.capacityInput').forEach(function(input)
     {
         const day = input.dataset.day;
-        BAKERY_CONFIG.dailyCapacity[day] = input.disabled ? 0 : (parseInt(input.value, 10) || 0);
+        newCapacity[day] = input.disabled ? 0 : (parseInt(input.value, 10) || 0);
     });
 
     const payload =
     {
-        productionDays: BAKERY_CONFIG.productionDays,
-        pickupDays:     BAKERY_CONFIG.pickupDays,
-        dailyCapacity:  BAKERY_CONFIG.dailyCapacity
+        productionDays: activeDays,
+        pickupDays:     activeDays.slice(),
+        dailyCapacity:  newCapacity
     };
 
     const btn = document.querySelector('.settSaveProductionSchedule');
@@ -2489,6 +2916,9 @@ async function saveProductionSchedule()
     try
     {
         await updateSettings(payload);
+        BAKERY_CONFIG.productionDays = payload.productionDays;
+        BAKERY_CONFIG.pickupDays     = payload.pickupDays;
+        BAKERY_CONFIG.dailyCapacity  = payload.dailyCapacity;
         showToast('success', 'Production schedule saved. Today\'s Production updates automatically.');
     }
     catch (err)
@@ -2511,21 +2941,15 @@ async function saveSocialLinks()
     const instagramInput = document.getElementById('settInstagram');
     const websiteInput   = document.getElementById('settWebsite');
 
-    if (googleInput)    { BAKERY_CONFIG.googleReviewLink = googleInput.value.trim(); }
-    if (facebookInput)  { BAKERY_CONFIG.social.facebook  = facebookInput.value.trim(); }
-    if (tiktokInput)    { BAKERY_CONFIG.social.tiktok    = tiktokInput.value.trim(); }
-    if (instagramInput) { BAKERY_CONFIG.social.instagram = instagramInput.value.trim(); }
-    if (websiteInput)   { BAKERY_CONFIG.website          = websiteInput.value.trim(); }
-
     // API keys use "Url" suffix; BAKERY_CONFIG uses different names.
     // Mapping applied here at the API boundary.
     const payload =
     {
-        googleReviewUrl: BAKERY_CONFIG.googleReviewLink,
-        facebookUrl:     BAKERY_CONFIG.social.facebook,
-        tiktokUrl:       BAKERY_CONFIG.social.tiktok,
-        instagramUrl:    BAKERY_CONFIG.social.instagram,
-        websiteUrl:      BAKERY_CONFIG.website
+        googleReviewUrl: googleInput    ? googleInput.value.trim()    : BAKERY_CONFIG.googleReviewLink,
+        facebookUrl:     facebookInput  ? facebookInput.value.trim()  : BAKERY_CONFIG.social.facebook,
+        tiktokUrl:       tiktokInput    ? tiktokInput.value.trim()    : BAKERY_CONFIG.social.tiktok,
+        instagramUrl:    instagramInput ? instagramInput.value.trim() : BAKERY_CONFIG.social.instagram,
+        websiteUrl:      websiteInput   ? websiteInput.value.trim()   : BAKERY_CONFIG.website
     };
 
     const btn = document.querySelector('.settSaveSocialLinks');
@@ -2534,6 +2958,11 @@ async function saveSocialLinks()
     try
     {
         await updateSettings(payload);
+        BAKERY_CONFIG.googleReviewLink = payload.googleReviewUrl;
+        BAKERY_CONFIG.social.facebook  = payload.facebookUrl;
+        BAKERY_CONFIG.social.tiktok    = payload.tiktokUrl;
+        BAKERY_CONFIG.social.instagram = payload.instagramUrl;
+        BAKERY_CONFIG.website          = payload.websiteUrl;
         showToast('success', 'Social links saved.');
     }
     catch (err)
@@ -2552,12 +2981,13 @@ async function saveOrderAvailability()
 
     const activeBtn = document.querySelector('.availabilityOption.isActive');
 
-    if (activeBtn)
+    if (!activeBtn)
     {
-        BAKERY_CONFIG.orderAvailability = activeBtn.dataset.value;
+        showToast('warning', 'Please select an availability option.');
+        return;
     }
 
-    const payload = { orderAvailability: BAKERY_CONFIG.orderAvailability };
+    const payload = { orderAvailability: activeBtn.dataset.value };
 
     const btn = document.querySelector('.settSaveOrderAvailability');
     setButtonLoading(btn, true);
@@ -2565,6 +2995,7 @@ async function saveOrderAvailability()
     try
     {
         await updateSettings(payload);
+        BAKERY_CONFIG.orderAvailability = payload.orderAvailability;
         showToast('success', 'Order availability saved.');
     }
     catch (err)
@@ -2611,9 +3042,8 @@ async function savePickupConfiguration()
 
     });
 
-    BAKERY_CONFIG.pickupConfiguration = { message: message, windows: windows };
-
-    const payload = { pickupConfiguration: BAKERY_CONFIG.pickupConfiguration };
+    const newConfig = { message: message, windows: windows };
+    const payload   = { pickupConfiguration: newConfig };
 
     const btn = document.querySelector('.settSavePickupConfiguration');
     setButtonLoading(btn, true);
@@ -2621,6 +3051,7 @@ async function savePickupConfiguration()
     try
     {
         await updateSettings(payload);
+        BAKERY_CONFIG.pickupConfiguration = newConfig;
         showToast('success', 'Pickup configuration saved.');
     }
     catch (err)
@@ -2664,7 +3095,12 @@ function initializeSettingsInteractions()
 
                 if (!isNowActive)
                 {
-                    capacityInput.value = 0;
+                    capacityInput.dataset.savedCapacity = capacityInput.value;
+                    capacityInput.value                 = 0;
+                }
+                else if (capacityInput.dataset.savedCapacity !== undefined)
+                {
+                    capacityInput.value = capacityInput.dataset.savedCapacity;
                 }
             }
 
@@ -2747,24 +3183,113 @@ function initializeSettingsInteractions()
    HELP PAGE
 ============================================================ */
 
+/*
+    Getting Started workflow — the seven steps every order passes
+    through, in the order an owner actually works them day to day.
+    Purely informational (no data binding); intended to be read in
+    under a minute by someone who has never opened the dashboard.
+*/
+const GETTING_STARTED_STEPS =
+[
+    'Review New Orders',
+    'Contact Customer',
+    'Receive Payment',
+    'Confirm Order',
+    'Prepare Order',
+    'Mark Ready for Pickup',
+    'Complete Pickup'
+];
+
+/*
+    FAQ content — written for Brigitte's first day using the system.
+    Each answer describes exactly what happens in this build (button
+    names, tab names, and automatic transitions all match the real
+    Orders/Production workflow) so nothing here goes stale on its own.
+*/
+const HELP_FAQ_ITEMS =
+[
+    {
+        question: 'How do I confirm an order?',
+        answer: 'Open the order from New Requests and click "Mark Paid" once you’ve received payment. It moves to your Confirmed Queue automatically — there’s no separate "confirm" button.'
+    },
+    {
+        question: 'How do I contact the customer?',
+        answer: 'On any order in New Requests, click "Contact Customer." This records that you’ve reached out and moves the order to Awaiting Payment so you know where things stand.'
+    },
+    {
+        question: 'How do I mark an order as Awaiting Payment?',
+        answer: 'You don’t need to set this directly — clicking "Contact Customer" on a New Request moves it to Awaiting Payment for you.'
+    },
+    {
+        question: 'How do I mark an order as Confirmed?',
+        answer: 'Click "Mark Paid" on the order, whether it’s sitting in New Requests or Awaiting Payment. Confirmed means paid and scheduled for production.'
+    },
+    {
+        question: 'How do I move an order into Production?',
+        answer: 'This happens automatically on the order’s scheduled production day — you don’t move it yourself. Confirmed orders appear under Today’s Production on the Production page when their day arrives.'
+    },
+    {
+        question: 'How do I mark Ready for Pickup?',
+        answer: 'On the Production page, find the order under Today’s Production and click "Mark Ready for Pickup." It moves to Pending Pickup.'
+    },
+    {
+        question: 'How do I complete a pickup?',
+        answer: 'When the customer arrives, open the order from Orders or Production and click "Complete Pickup." You’ll be asked to confirm before it’s marked done.'
+    },
+    {
+        question: 'How do I change production days?',
+        answer: 'Go to Settings → Production Schedule and toggle the days you produce and fulfill orders. Today’s Production updates automatically to match.'
+    },
+    {
+        question: 'How do I update pickup hours?',
+        answer: 'Go to Settings → Pickup Configuration to set your pickup windows (days and times) and the pickup message shown to customers on your Website.'
+    },
+    {
+        question: 'How do I change my bakery settings?',
+        answer: 'The Settings page covers your business info, phone, address, social links, and order availability. Each card saves independently when you click its own "Save Changes" button.'
+    },
+    {
+        question: 'How do I add an order manually?',
+        answer: 'Click "New Order Request" in the sidebar to enter a phone order or walk-in request yourself. It’s added the exact same way as an order submitted through your Website.'
+    },
+    {
+        question: 'How does the Reviews page work?',
+        answer: 'Reviews is private feedback from your customers — not public Google reviews. When a customer flags an issue, it appears there so you can reach out and resolve it directly. Click "Mark Resolved" once you\'ve taken care of it.'
+    }
+];
+
 function renderHelpPage()
 {
 
-    const faqItems =
-    [
-        'How do I confirm an order request?',
-        'How do I mark an order as Ready for Pickup?',
-        'How do I change my production days?',
-        'How do I update my daily order capacity?',
-        'How do I log customer feedback?',
-        'How do I change the dashboard theme?'
-    ];
+    const workflowHTML = GETTING_STARTED_STEPS.map(function(label, i)
+    {
 
-    const faqHTML = faqItems.map(function(question)
+        const step = `
+            <div class="helpWorkflowStep">
+                <div class="helpWorkflowNumber">${i + 1}</div>
+                <div class="helpWorkflowLabel">${esc(label)}</div>
+            </div>
+        `;
+
+        const arrow = i < GETTING_STARTED_STEPS.length - 1
+            ? `<div class="helpWorkflowArrow"><i class="fa-solid fa-arrow-down"></i></div>`
+            : '';
+
+        return step + arrow;
+
+    }).join('');
+
+    const faqHTML = HELP_FAQ_ITEMS.map(function(item, i)
     {
         return `
-            <div class="helpFaqItem">
-                <span class="helpFaqQ">${question}</span>
+            <div class="helpFaqItem" data-index="${i}">
+                <div class="helpFaqQuestion">
+                    <span class="helpFaqQ">${esc(item.question)}</span>
+                    <i class="fa-solid fa-chevron-down helpFaqIcon"></i>
+                </div>
+                <div class="helpFaqAnswer">
+                    <p class="helpFaqAnswerText">${esc(item.answer)}</p>
+                </div>
             </div>
         `;
     }).join('');
@@ -2809,6 +3334,14 @@ function renderHelpPage()
         </div>
 
         <div style="margin-top: 1.5rem; font-size: 0.75rem; font-weight: 700; color: var(--clrTextMuted); text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 0.5rem;">
+            Getting Started — Your Order Workflow
+        </div>
+
+        <div class="helpCard helpWorkflowCard">
+            ${workflowHTML}
+        </div>
+
+        <div style="margin-top: 1.5rem; font-size: 0.75rem; font-weight: 700; color: var(--clrTextMuted); text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 0.5rem;">
             Frequently Asked Questions
         </div>
 
@@ -2817,8 +3350,19 @@ function renderHelpPage()
         </div>
 
         <div class="helpContactBox">
-            <div class="helpContactTitle">Need help from the NuloEdge team?</div>
-            <div class="helpContactSub">Contact your NuloEdge account manager or visit the NuloOS support portal.</div>
+            <div class="helpContactTitle">Need Help?</div>
+            <div class="helpContactSub">If you ever have questions or run into an issue, we're here to help.</div>
+            <div class="helpContactActions">
+                <a class="btn btnPrimary btnSm" href="mailto:support@nulostudio.com">
+                    <i class="fa-solid fa-envelope"></i> Email Support
+                </a>
+                <a class="btn btnGhost btnSm" href="sms:+18005550100">
+                    <i class="fa-solid fa-comment-sms"></i> Text Support
+                </a>
+                <button class="btn btnGhost btnSm" id="helpScheduleCallBtn" type="button">
+                    <i class="fa-solid fa-phone"></i> Schedule a Call
+                </button>
+            </div>
         </div>
 
     `;
@@ -2828,7 +3372,45 @@ function renderHelpPage()
 function initializeHelpAccordion()
 {
 
-    // FAQ items are informational — full documentation available in NuloOS v1.1
+    // ── FAQ Accordion — single-open, smooth expand/collapse ──
+
+    document.querySelectorAll('.helpFaqItem').forEach(function(item)
+    {
+
+        const question = item.querySelector('.helpFaqQuestion');
+
+        if (!question) { return; }
+
+        question.addEventListener('click', function()
+        {
+
+            const isOpen = item.classList.contains('isOpen');
+
+            document.querySelectorAll('.helpFaqItem').forEach(function(other)
+            {
+                other.classList.remove('isOpen');
+            });
+
+            if (!isOpen)
+            {
+                item.classList.add('isOpen');
+            }
+
+        });
+
+    });
+
+    // ── Schedule a Call — no scheduling link yet for Version 1 ──
+
+    const scheduleBtn = document.getElementById('helpScheduleCallBtn');
+
+    if (scheduleBtn)
+    {
+        scheduleBtn.addEventListener('click', function()
+        {
+            showToast('info', 'Scheduling isn\'t set up yet — for now, please email or text support.');
+        });
+    }
 
 }
 
@@ -3021,16 +3603,8 @@ document.addEventListener('DOMContentLoaded', function()
 document.addEventListener('DOMContentLoaded', function()
 {
 
-    // Nav badge: new requests count
-    const navBadge = document.getElementById('navBadgeRequests');
-
-    if (navBadge)
-    {
-        navBadge.textContent = ORDERS.filter(function(o)
-        {
-            return o.status === STATUS.NEW_REQUEST;
-        }).length;
-    }
+    // Nav badge: initial count — updateNavBadge() keeps it live on every re-render
+    updateNavBadge();
 
     // Top bar date
     const topBarDate = document.getElementById('topBarDate');
@@ -3038,7 +3612,7 @@ document.addEventListener('DOMContentLoaded', function()
     if (topBarDate)
     {
 
-        const today = new Date(DEMO_TODAY + 'T12:00:00');
+        const today = new Date(TODAY_DATE + 'T12:00:00');
 
         topBarDate.textContent = today.toLocaleDateString('en-US',
         {
@@ -3052,5 +3626,9 @@ document.addEventListener('DOMContentLoaded', function()
 
     // Render initial page
     renderPage('dashboard');
+
+    // Load live orders from Google Sheets via the Apps Script API,
+    // then re-render so every order view reflects real data
+    loadOrdersFromAPI();
 
 });
